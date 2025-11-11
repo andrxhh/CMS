@@ -12,6 +12,6 @@ typedef struct {
     int band_A, band_B, band_C, band_D, band_F;
 } Stats;
 
-Stats compute_stats(const Student *arr, size_t n);
+Stats compute_stats(const void *data, size_t count);
 
 #endif // STATS_H
