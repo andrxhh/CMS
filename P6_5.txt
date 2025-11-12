@@ -6,3 +6,10 @@ ID	Name		Programme		Mark
 2301234	Joshua Chen	Software Engineering	70.5
 2201234	Isaac Teo	Computer Science	63.4
 2304567	John Levoy	Digital Supply Chain	85.9
+2405678	Sarah Lim	Information Security	88.2
+2109876	Michael Tan	Data Science	92.5
+2307890	Emily Wong	Computer Science	75.8
+2401234	David Lee	Software Engineering	81.3
+2205678	Rachel Ng	Digital Supply Chain	67.9
+2500461	Aaron Dsilva	CyberSecurity	76.5
+

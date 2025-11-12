@@ -1,7 +1,7 @@
 /* 
  * MAIN.C - Main program entry point
  * 
- * This is the entry point for the Course Management System
+ * This is the standard interactive CMS interface
  */
 
 #include <stdio.h>
@@ -17,8 +17,8 @@ int main(void) {
     Store store;
     store_init(&store);
     
-    // Database file path
-    const char *db_path = "sample-cms.txt";
+    // Database file path - using P6_5.txt as per your implementation
+    const char *db_path = "P6_5.txt";
     
     // Print program header
     printf("============================================\n");
@@ -52,4 +52,3 @@ int main(void) {
     
     return 0;
 }
-

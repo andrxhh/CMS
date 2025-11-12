@@ -1,98 +1,132 @@
 /* 
  * IO.C - Input/Output operations for loading and saving the database
  * 
- * This file handles reading from and writing to the database file
+ * Integrated version with your P6_5.txt file format support
  */
 
-#include <stdio.h>   // For FILE, fopen, fclose, fgets, fprintf
-#include <string.h>  // For string functions
-#include "io.h"      // Our header
-#include "util.h"    // Utility functions
+#include <stdio.h>
+#include <string.h>
+#include "io.h"
+#include "util.h"
+#include "cmd.h"  // For cmd_insert
 
-/* 
+/*******************************************************************************
  * LOAD DATABASE FROM FILE
  * 
- * Reads student records from the database file and loads them into the store
- */
+ * Your implementation - reads P6_5.txt format with header lines
+ ******************************************************************************/
 bool cms_load(const char *path, Store *s, int *skipped_lines) {
-    FILE *f = fopen(path, "r");
-    if (!f) return false;  // File doesn't exist or can't be opened
+    FILE *file = fopen(path, "r");
+    if (!file) {
+        printf("INFO: Could not open %s (file may not exist yet)\n", path);
+        return false;
+    }
     
-    *skipped_lines = 0;
     char line[512];
-    bool in_data = false;  // Flag to track if we've found the data section
+    int line_num = 0;
+    bool in_data = false;
     
-    // Read file line by line
-    while (fgets(line, sizeof line, f)) {
-        str_trim(line);  // Remove whitespace
+    if (skipped_lines) *skipped_lines = 0;
+    
+    printf("Loading existing data from %s...\n", path);
+    
+    while (fgets(line, sizeof(line), file)) {
+        line_num++;
+        
+        // Remove newline
+        line[strcspn(line, "\n")] = '\0';
         
         // Skip empty lines
-        if (line[0] == '\0') continue;
+        if (strlen(line) == 0) {
+            continue;
+        }
         
-        // Look for the table header line (ID Name Programme Mark)
+        // Look for the table header line
         if (!in_data) {
-            if (strstr(line, "ID") && strstr(line, "Name") && 
+            if (strstr(line, "ID") && strstr(line, "Name") &&
                 strstr(line, "Programme") && strstr(line, "Mark")) {
-                in_data = true;  // Found data section
+                in_data = true;
             }
             continue;
         }
         
-        // Parse data line: ID Name Programme Mark
-        Student st;
-        char name_buf[256], prog_buf[256];
+        // Parse data line: ID, Name, Programme, Mark (tab-separated)
+        int id;
+        char name[256];
+        char programme[256];
+        float mark;
         
-        // Parse tab-separated values
-        int fields = sscanf(line, "%d %[^\t] %[^\t] %f", 
-                           &st.id, name_buf, prog_buf, &st.mark);
+        // Try tab-separated format first
+        int fields = sscanf(line, "%d\t%255[^\t]\t%255[^\t]\t%f",
+                           &id, name, programme, &mark);
         
         if (fields == 4) {
-            // Copy and trim strings
-            strncpy(st.name, name_buf, sizeof st.name - 1);
-            st.name[sizeof st.name - 1] = '\0';
-            str_trim(st.name);
+            // Create INSERT command and use cmd_insert
+            char insert_cmd[512];
             
-            strncpy(st.programme, prog_buf, sizeof st.programme - 1);
-            st.programme[sizeof st.programme - 1] = '\0';
-            str_trim(st.programme);
+            // Trim strings
+            str_trim(name);
+            str_trim(programme);
             
-            // Insert student into store
-            if (!store_insert(s, st)) {
-                (*skipped_lines)++;
-            }
+            snprintf(insert_cmd, sizeof(insert_cmd),
+                    "INSERT ID=%d Name=\"%s\" Programme=\"%s\" Mark=%.1f",
+                    id, name, programme, mark);
+            
+            cmd_insert(insert_cmd, s);
         } else {
-            (*skipped_lines)++;
+            if (skipped_lines) (*skipped_lines)++;
         }
     }
     
-    fclose(f);
-    return s->size > 0 || *skipped_lines > 0;
+    fclose(file);
+    
+#if USE_FIXED_SIZE_ARRAY
+    printf("Loaded %d students from file.\n\n", s->count);
+    return s->count > 0;
+#else
+    printf("Loaded %zu students from file.\n\n", s->size);
+    return s->size > 0;
+#endif
 }
 
-/* 
+/*******************************************************************************
  * SAVE DATABASE TO FILE
  * 
- * Writes all student records from the store to the database file
- */
+ * Your implementation - writes P6_5.txt format
+ ******************************************************************************/
 bool cms_save(const char *path, const Store *s) {
-    FILE *f = fopen(path, "w");
-    if (!f) return false;
-    
-    // Write header
-    fprintf(f, "Database Name: Sample-CMS\n");
-    fprintf(f, "Authors: Student Project\n");
-    fprintf(f, "\n");
-    fprintf(f, "Table Name: StudentRecords\n");
-    fprintf(f, "ID\tName\t\tProgramme\t\tMark\n");
-    
-    // Write all student records
-    for (size_t i = 0; i < s->size; i++) {
-        const Student *st = &s->data[i];
-        fprintf(f, "%d\t%s\t%s\t%.2f\n", 
-                st->id, st->name, st->programme, st->mark);
+    FILE *file = fopen(path, "w");
+    if (!file) {
+        printf("ERROR: Could not open %s for writing\n", path);
+        return false;
     }
     
-    fclose(f);
+    // Write header
+    fprintf(file, "Database Name: Sample-CMS\n");
+    fprintf(file, "Authors: Assistant Prof Oran Zane Devilly\n");
+    fprintf(file, "\n");
+    fprintf(file, "Table Name: StudentRecords\n");
+    fprintf(file, "ID\tName\t\tProgramme\t\tMark\n");
+    
+    // Write all students
+#if USE_FIXED_SIZE_ARRAY
+    for (int i = 0; i < s->count; i++) {
+        const Student *st = &s->students[i];
+#else
+    for (size_t i = 0; i < s->size; i++) {
+        const Student *st = &s->data[i];
+#endif
+        fprintf(file, "%d\t%s\t%s\t%.1f\n",
+               st->id, st->name, st->programme, st->mark);
+    }
+    
+    fclose(file);
+    
+#if USE_FIXED_SIZE_ARRAY
+    printf("Saved %d students to %s\n", s->count, path);
+#else
+    printf("Saved %zu students to %s\n", s->size, path);
+#endif
+    
     return true;
 }
-

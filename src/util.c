@@ -1,54 +1,107 @@
 /* 
  * UTIL.C - Utility functions for string manipulation
  * 
- * These are helper functions (like Python's string methods)
+ * Integrated version combining your implementation with the original template
  */
 
-#include <ctype.h>   // Character type functions (isspace, tolower)
-#include <string.h>  // String functions (strlen, memmove)
-#include <stdlib.h>  // Standard library (strtol, strtof)
-#include "util.h"    // Our header file
+#include "util.h"
+#include <stdlib.h>
+#include <ctype.h>
+#include <string.h>
+
+/* 
+ * PARSE INTEGER (like Python's int(string))
+ */
+bool parse_int(const char *str, int *out) {
+    if (str == NULL || out == NULL) return false;
+    
+    char *endptr;
+    long val = strtol(str, &endptr, 10);
+    
+    // Check if conversion was successful
+    if (*endptr != '\0' && !isspace((unsigned char)*endptr)) {
+        return false;
+    }
+    
+    // Check for overflow (int range: -2147483648 to 2147483647)
+    if (val < -2147483648L || val > 2147483647L) {
+        return false;
+    }
+    
+    *out = (int)val;
+    return true;
+}
+
+/* 
+ * PARSE FLOAT (like Python's float(string))
+ */
+bool parse_float(const char *str, float *out) {
+    if (str == NULL || out == NULL) return false;
+    
+    char *endptr;
+    double val = strtod(str, &endptr);
+    
+    // Check if conversion was successful
+    if (*endptr != '\0' && !isspace((unsigned char)*endptr)) {
+        return false;
+    }
+    
+    *out = (float)val;
+    return true;
+}
 
 /* 
  * TRIM WHITESPACE (like Python's str.strip())
- * 
- * In Python: line = line.strip()
- * In C: We modify the string in place (no return value)
+ * Removes leading and trailing whitespace in place
  */
-void str_trim(char *s) {
-    if (!s) return;
+void str_trim(char *str) {
+    if (str == NULL) return;
     
     // Trim leading whitespace
-    char *start = s;
-    while (*start && isspace((unsigned char)*start)) start++;
+    char *start = str;
+    while (*start && (*start == ' ' || *start == '\t' || 
+           *start == '\n' || *start == '\r')) {
+        start++;
+    }
     
-    if (start != s) {
-        memmove(s, start, strlen(start) + 1);
+    // If string was all whitespace
+    if (*start == '\0') {
+        str[0] = '\0';
+        return;
+    }
+    
+    // Move trimmed string to beginning
+    if (start != str) {
+        memmove(str, start, strlen(start) + 1);
     }
     
     // Trim trailing whitespace
-    char *end = s + strlen(s);
-    while (end > s && isspace((unsigned char)*(end - 1))) end--;
-    *end = '\0';
+    char *end = str + strlen(str) - 1;
+    while (end > str && (*end == ' ' || *end == '\t' || 
+           *end == '\n' || *end == '\r')) {
+        end--;
+    }
+    end[1] = '\0';
 }
 
 /* 
  * CONVERT TO LOWERCASE (like Python's str.lower())
- * 
- * Modifies string in place (Python creates new string)
+ * Modifies string in place
  */
-void str_tolower(char *s) {
-    for (; *s; s++) {
-        *s = tolower((unsigned char)*s);
+void str_tolower(char *str) {
+    if (!str) return;
+    for (; *str; str++) {
+        *str = tolower((unsigned char)*str);
     }
 }
 
 /* 
  * CASE-INSENSITIVE STRING COMPARISON (like Python's str.lower() == other.lower())
- * 
  * Returns true if strings are equal (ignoring case)
  */
 bool str_ieq(const char *a, const char *b) {
+    if (!a || !b) return false;
+    
     while (*a && *b) {
         if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
             return false;
@@ -60,53 +113,11 @@ bool str_ieq(const char *a, const char *b) {
 }
 
 /* 
- * PARSE INTEGER (like Python's int(string))
- * 
- * Returns true if successful, false if invalid
- * out parameter stores the parsed value
- */
-bool parse_int(const char *s, int *out) {
-    char *end;
-    long val = strtol(s, &end, 10);
-    if (end == s || *end != '\0') return false;
-    *out = (int)val;
-    return true;
-}
-
-/* 
- * PARSE FLOAT (like Python's float(string))
- * 
- * Returns true if successful, false if invalid
- */
-bool parse_float(const char *s, float *out) {
-    char *end;
-    float val = strtof(s, &end);
-    if (end == s || *end != '\0') return false;
-    *out = val;
-    return true;
-}
-
-/* 
- * VALIDATION FUNCTIONS
- */
-bool valid_id(int id) {
-    return id >= 100000 && id <= 99999999;  // 6-8 digits
-}
-
-bool valid_mark(float m) {
-    return m >= 0.0f && m <= 100.0f;
-}
-
-bool valid_text(const char *s) {
-    return s && s[0] != '\0' && strlen(s) < 64;
-}
-
-/* 
- * CASE-INSENSITIVE SUBSTRING SEARCH (like Python's "needle" in "haystack".lower())
- * 
+ * CASE-INSENSITIVE SUBSTRING SEARCH
  * Returns pointer to found substring, or NULL if not found
  */
 char *strcasestr(const char *haystack, const char *needle) {
+    if (!haystack || !needle) return NULL;
     if (!*needle) return (char *)haystack;
     
     size_t needle_len = strlen(needle);
@@ -125,4 +136,3 @@ char *strcasestr(const char *haystack, const char *needle) {
     }
     return NULL;
 }
-
