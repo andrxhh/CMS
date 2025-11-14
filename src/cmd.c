@@ -1,405 +1,210 @@
-/******************************
- * FILE: cmd.c
- * 
- * COMMAND PROCESSING for CMS (Course Management System)
- * Integrated version with INSERT and DELETE implementations
- ******************************/
-
 #include <stdio.h>
 #include <string.h>
-#include <strings.h>  // For strncasecmp
 #include <stdlib.h>
 #include <ctype.h>
+
 #include "cmd.h"
 #include "io.h"
-#include "sort.h"
 #include "stats.h"
+#include "sort.h"
 #include "util.h"
 
-/*******************************************************************************
- * MENU / HELP PRINTER
- ******************************************************************************/
-static void print_menu(void) {
-    puts("------------------------------------------------------------");
-    puts("Available Commands");
-    puts("------------------------------------------------------------");
-    puts("OPEN                      - Load database from P6_5.txt");
-    puts("SAVE                      - Save database to P6_5.txt");
-    puts("");
-    puts("SHOW ALL                  - Display all students");
-    puts("SHOW ALL SORT BY ID ASC   - Display sorted by ID ascending");
-    puts("SHOW ALL SORT BY ID DESC  - Display sorted by ID descending");
-    puts("SHOW ALL SORT BY MARK ASC - Display sorted by Mark ascending");
-    puts("SHOW ALL SORT BY MARK DESC- Display sorted by Mark descending");
-    puts("SHOW SUMMARY              - Show statistics");
-    puts("");
-    puts("INSERT ID=<id> Name=\"<name>\" Programme=\"<programme>\" Mark=<mark>");
-    puts("  e.g. INSERT ID=2501234 Name=\"Alice Tan\" Programme=\"Computer Science\" Mark=85.5");
-    puts("");
-    puts("UPDATE ID=<id> [Name=\"<name>\"] [Programme=\"<programme>\"] [Mark=<mark>]");
-    puts("  e.g. UPDATE ID=2301234 Mark=95.5");
-    puts("");
-    puts("DELETE ID=<id>            - Delete a record (prompts Y/N)");
-    puts("QUERY ID=<id>             - Show a single record");
-    puts("");
-    puts("HELP                      - Show this menu");
-    puts("EXIT or QUIT              - Exit the program");
-    puts("------------------------------------------------------------");
+static void init_patch(Student *patch) {
+    memset(patch, 0, sizeof(Student));
+    patch->id = -1;        // Sentinel for no change
+    patch->mark = -1.0f;   // Sentinel for no change
 }
 
-/*******************************************************************************
- * HELPER FUNCTION: Extract quoted string value
- * 
- * Purpose: Parse values that are in quotes like Name="Alice Tan"
- ******************************************************************************/
-static bool extract_quoted_value(const char *str, char *out, size_t out_size) {
-    const char *start = strchr(str, '"');
-    if (!start) return false;
-    start++;
-    
-    const char *end = strchr(start, '"');
-    if (!end) return false;
-    
-    size_t len = end - start;
-    if (len >= out_size) return false;
-    
-    strncpy(out, start, len);
-    out[len] = '\0';
-    
-    return true;
-}
-
-/*******************************************************************************
- * HELPER FUNCTION: Extract key-value pair
- * 
- * Purpose: Parse patterns like "ID=123456" or "Mark=85.5"
- ******************************************************************************/
-static bool extract_value(const char *str, char *value, size_t value_size) {
-    const char *eq = strchr(str, '=');
-    if (!eq) return false;
-    eq++;
-    
-    while (*eq == ' ' || *eq == '\t') eq++;
-    
-    size_t i = 0;
-    while (eq[i] && eq[i] != ' ' && eq[i] != '\t' && i < value_size - 1) {
-        value[i] = eq[i];
-        i++;
+static void show_all(const Store *s){
+    if (s->size == 0) {
+        puts("No records.");
+        return;
     }
-    value[i] = '\0';
-    
-    return i > 0;
+    // Dynamically compute column widths based on data + header
+    size_t id_w = strlen("ID");
+    size_t name_w = strlen("Name");
+    size_t prog_w = strlen("Programme");
+    size_t mark_w = strlen("Mark");
+    char tmp[64];
+
+    for (size_t i = 0; i < s->size; ++i) {
+        const Student *st = &s->data[i];
+        // ID width
+        int n = snprintf(tmp, sizeof tmp, "%d", st->id);
+        if (n > 0 && (size_t)n > id_w) id_w = (size_t)n;
+        // Name width
+        size_t ln = strlen(st->name);
+        if (ln > name_w) name_w = ln;
+        // Programme width
+        size_t lp = strlen(st->programme);
+        if (lp > prog_w) prog_w = lp;
+        // Mark width (one decimal place)
+        n = snprintf(tmp, sizeof tmp, "%.1f", st->mark);
+        if (n > 0 && (size_t)n > mark_w) mark_w = (size_t)n;
+    }
+
+    // Cast widths to int for printf field widths (safe for normal table sizes)
+    int iw = (int)id_w;
+    int nw = (int)name_w;
+    int pw = (int)prog_w;
+    int mw = (int)mark_w;
+
+    printf("size=%zu cap=%zu\n", s->size, s->cap);
+    printf("%-*s  %-*s  %-*s  %*s\n", iw, "ID", nw, "Name", pw, "Programme", mw, "Mark");
+    for (size_t i = 0; i < s->size; ++i) {
+        const Student *st = &s->data[i];
+        printf("%*d  %-*s  %-*s  %*.1f\n",
+               iw, st->id,
+               nw, st->name,
+               pw, st->programme,
+               mw, st->mark);
+    }
+    puts("");
 }
 
-/*******************************************************************************
- * INITIALIZE PATCH STRUCTURE
- * 
- * A "patch" is a partial Student object - only some fields are set
- ******************************************************************************/
-static void init_patch(Student *p) {
-    memset(p, 0, sizeof *p);
-    p->id = -1;
-    p->mark = -1.0f;
-}
-
-/*******************************************************************************
- * PARSE KEY=VALUE PAIR (Original template version)
- ******************************************************************************/
 static bool parse_kv(char *token, Student *patch) {
     char *eq = strchr(token, '=');
-    if (!eq) return false;
-    
+    if (!eq) {
+        return false;
+    }
     *eq = '\0';
+
     char *key = token;
-    char *val = eq + 1;
-    
+    char *value = eq + 1;
     str_trim(key);
-    str_trim(val);
-    
-    // Handle quoted values
-    if (val[0] == '"') {
-        size_t L = strlen(val);
-        if (L >= 2 && val[L-1] == '"') {
-            val[L-1] = '\0';
-            memmove(val, val+1, L-1);
+    str_trim(value);
+
+    if (value[0] == '"') {
+        size_t len = strlen(value);
+        if (len >= 2 && value[len - 1] == '"') {
+            value[len-1] = '\0';
+            memmove(value, value + 1, len - 1);
         }
     }
-    
-    // Match key and set appropriate field
+
     if (str_ieq(key, "ID")) {
         int id;
-        if (!parse_int(val, &id)) return false;
+        if(!parse_int(value, &id)) return false;
         patch->id = id;
         return true;
     } else if (str_ieq(key, "Name")) {
-        strncpy(patch->name, val, sizeof patch->name);
-        patch->name[sizeof patch->name - 1] = '\0';
+        strncpy(patch->name, value, sizeof(patch->name));
+        patch->name[sizeof(patch->name) - 1] = '\0';
         return true;
-    } else if (str_ieq(key, "Programme") || str_ieq(key, "Program") || str_ieq(key, "Prog")) {
-        strncpy(patch->programme, val, sizeof patch->programme);
-        patch->programme[sizeof patch->programme - 1] = '\0';
+    } else if (str_ieq(key, "Programme")) {
+        strncpy(patch->programme, value, sizeof(patch->programme));
+        patch->programme[sizeof(patch->programme) - 1] = '\0';
         return true;
     } else if (str_ieq(key, "Mark")) {
-        float m;
-        if (!parse_float(val, &m)) return false;
-        patch->mark = m;
+        float mark;
+        if (!parse_float(value, &mark)) return false;
+        patch->mark = mark;
         return true;
     }
-    
+
     return false;
 }
 
-/*******************************************************************************
- * INSERT COMMAND - YOUR IMPLEMENTATION INTEGRATED!
- * 
- * Handles: INSERT ID=<id> Name="<name>" Programme="<programme>" Mark=<mark>
- ******************************************************************************/
-void cmd_insert(const char *line, Store *s) {
-    Student st = {0};
-    st.id = 0;
-    st.name[0] = '\0';
-    st.programme[0] = '\0';
-    st.mark = -1.0f;
-    
-    bool has_id = false;
-    bool has_name = false;
-    bool has_programme = false;
-    bool has_mark = false;
-    
-    char buffer[512];
-    strncpy(buffer, line, sizeof(buffer) - 1);
-    buffer[sizeof(buffer) - 1] = '\0';
-    
-    // Find where parameters start
-    char *params = strstr(buffer, "INSERT");
-    if (!params) {
-        printf("ERROR: Invalid INSERT command format.\n");
-        return;
-    }
-    params += 6;
-    
-    // Skip whitespace
-    while (*params == ' ' || *params == '\t') params++;
-    
-    // Parse each field
-    char *current = params;
-    while (*current) {
-        while (*current == ' ' || *current == '\t') current++;
-        if (*current == '\0') break;
-        
-        if (strncmp(current, "ID=", 3) == 0) {
-            char id_str[32];
-            if (extract_value(current, id_str, sizeof(id_str))) {
-                if (parse_int(id_str, &st.id)) {
-                    has_id = true;
-                }
-            }
-            while (*current && *current != ' ' && *current != '\t') current++;
-        }
-        else if (strncmp(current, "Name=", 5) == 0) {
-            if (extract_quoted_value(current, st.name, sizeof(st.name))) {
-                str_trim(st.name);
-                has_name = true;
-            }
-            char *quote_end = strchr(strchr(current, '"') + 1, '"');
-            if (quote_end) current = quote_end + 1;
-        }
-        else if (strncmp(current, "Programme=", 10) == 0) {
-            if (extract_quoted_value(current, st.programme, sizeof(st.programme))) {
-                str_trim(st.programme);
-                has_programme = true;
-            }
-            char *quote_end = strchr(strchr(current, '"') + 1, '"');
-            if (quote_end) current = quote_end + 1;
-        }
-        else if (strncmp(current, "Mark=", 5) == 0) {
-            char mark_str[32];
-            if (extract_value(current, mark_str, sizeof(mark_str))) {
-                if (parse_float(mark_str, &st.mark)) {
-                    has_mark = true;
-                }
-            }
-            while (*current && *current != ' ' && *current != '\t') current++;
-        }
-        else {
-            while (*current && *current != ' ' && *current != '\t') current++;
-        }
-    }
-    
-    // Validate all required fields
-    if (!has_id) {
-        printf("ERROR: Missing or invalid ID field.\n");
-        printf("Format: INSERT ID=<id> Name=\"<name>\" Programme=\"<programme>\" Mark=<mark>\n");
-        return;
-    }
-    
-    if (!has_name) {
-        printf("ERROR: Missing or invalid Name field (must be in quotes).\n");
-        printf("Format: INSERT ID=<id> Name=\"<name>\" Programme=\"<programme>\" Mark=<mark>\n");
-        return;
-    }
-    
-    if (!has_programme) {
-        printf("ERROR: Missing or invalid Programme field (must be in quotes).\n");
-        printf("Format: INSERT ID=<id> Name=\"<name>\" Programme=\"<programme>\" Mark=<mark>\n");
-        return;
-    }
-    
-    if (!has_mark) {
-        printf("ERROR: Missing or invalid Mark field.\n");
-        printf("Format: INSERT ID=<id> Name=\"<name>\" Programme=\"<programme>\" Mark=<mark>\n");
-        return;
-    }
-    
-    // Attempt to insert
-    if (store_insert(s, st)) {
-        printf("SUCCESS: Student inserted (ID=%d, Name=\"%s\", Programme=\"%s\", Mark=%.2f)\n",
-               st.id, st.name, st.programme, st.mark);
-    } else {
-        if (!valid_id(st.id)) {
-            printf("ERROR: ID must be 6-8 digits (got: %d)\n", st.id);
-        } else if (!valid_mark(st.mark)) {
-            printf("ERROR: Mark must be between 0.0 and 100.0 (got: %.2f)\n", st.mark);
-        } else if (!valid_text(st.name)) {
-            printf("ERROR: Name cannot be empty\n");
-        } else if (!valid_text(st.programme)) {
-            printf("ERROR: Programme cannot be empty\n");
-        } else if (store_find_index_by_id(s, st.id) != -1) {
-            printf("ERROR: Student with ID %d already exists\n", st.id);
-        } else {
-            printf("ERROR: Failed to insert student\n");
-        }
-    }
-}
+static bool handle_insert(char *args, Store *s) {
+    Student patch;
+    init_patch(&patch);
 
-/*******************************************************************************
- * HELPER: Parse ID argument
- ******************************************************************************/
-static int parse_id_arg(const char *args) {
-    if (!args) return -1;
-    
-    char buf[256];
-    strncpy(buf, args, sizeof(buf)-1);
-    buf[sizeof(buf)-1] = '\0';
-
-    for (char *tok = strtok(buf, " \t\r\n"); tok; tok = strtok(NULL, " \t\r\n")) {
-        int id;
-        if (sscanf(tok, "ID=%d", &id) == 1) return id;
-    }
-    return -1;
-}
-
-/*******************************************************************************
- * HELPER: Read Yes/No confirmation
- ******************************************************************************/
-static char read_yes_no(void) {
-    char line[32];
-    if (!fgets(line, sizeof(line), stdin)) return 'N';
-    return (line[0] == 'y' || line[0] == 'Y') ? 'Y' : 'N';
-}
-
-/*******************************************************************************
- * DELETE COMMAND - YOUR IMPLEMENTATION INTEGRATED!
- * 
- * Handles: DELETE ID=<id>
- ******************************************************************************/
-bool handle_delete(const char *args, Store *s) {
-    int id = parse_id_arg(args);
-    if (id <= 0) {
-        fputs("DELETE requires a valid student ID.\n", stderr);
-        return false;
-    }
-
-    if (store_find_index_by_id(s, id) < 0) {
-        printf("CMS: The record with ID=%d does not exist.\n", id);
-        return false;
-    }
-
-    printf("CMS: Are you sure you want to delete record with ID=%d? Type \"Y\" to Confirm or type \"N\" to cancel.\n", id);
-    char yn = read_yes_no();
-    
-    if (yn == 'Y') {
-        if (store_delete(s, id)) {
-            printf("CMS: The record with ID=%d is successfully deleted.\n", id);
-            return true;
-        } else {
-            printf("CMS: Deletion failed due to an internal error.\n");
+    for (char *token = strtok(args, " "); token; token = strtok(NULL, " ")) {
+        if (!parse_kv(token, &patch)) {
+            fprintf(stderr, "Invalid key-value pair: %s\n", token);
             return false;
         }
-    } else {
-        puts("CMS: The deletion is cancelled.");
+    }
+
+    // Validate all fields are provided
+    if (patch.id < 0 || patch.name[0] == '\0' || patch.programme[0] == '\0' || patch.mark < 0.0f) {
+        fprintf(stderr, "INSERT requires ID, Name, Programme, Mark.\n");
         return false;
     }
+
+    if (!store_insert(s, patch)) {
+        fprintf(stderr, "Failed to insert record. Possible duplicate ID or invalid data.\n");
+        return false;
+    }
+
+    puts("Record successfully inserted.");
+    return true;
 }
 
-/*******************************************************************************
- * SHOW ALL STUDENTS
- ******************************************************************************/
-static void show_all(const Store *s) {
-#if USE_FIXED_SIZE_ARRAY
-    if (s->count == 0) {
-#else
-    if (s->size == 0) {
-#endif
-        puts("No student records to display.");
-        return;
-    }
-    
-    puts("ID\tName\tProgramme\tMark");
-    
-#if USE_FIXED_SIZE_ARRAY
-    for (int i = 0; i < s->count; i++) {
-        const Student *st = &s->students[i];
-#else
-    for (size_t i = 0; i < s->size; i++) {
-        const Student *st = &s->data[i];
-#endif
-        printf("%d\t%s\t%s\t%.2f\n", st->id, st->name, st->programme, st->mark);
-    }
-}
-
-/*******************************************************************************
- * HANDLE UPDATE COMMAND
- ******************************************************************************/
 static bool handle_update(char *args, Store *s) {
     Student patch;
     init_patch(&patch);
-    
-    for (char *tok = strtok(args, " "); tok; tok = strtok(NULL, " ")) {
-        if (!parse_kv(tok, &patch)) {
-            fprintf(stderr, "Invalid token: %s\n", tok);
+
+    for (char *token = strtok(args, " "); token; token = strtok(NULL, " ")) {
+        if (!parse_kv(token, &patch)) {
+            fprintf(stderr, "Invalid key-value pair: %s\n", token);
             return false;
         }
     }
-    
-    if (patch.id <= 0) {
-        fputs("UPDATE requires ID=...\n", stderr);
+
+    if (patch.id < 0) {
+        fprintf(stderr, "UPDATE requires existing ID to identify record.\n");
         return false;
     }
-    
-    int target_id = patch.id;
-    patch.id = -1;
-    
-    if (!store_update(s, target_id, &patch)) {
-        puts("Update failed (not found/invalid).");
+
+    if (!store_update(s, patch.id, &patch)) {
+        fprintf(stderr, "Failed to update record. Possible invalid data or ID not found.\n");
         return false;
     }
-    
+
     puts("Record successfully updated.");
     return true;
 }
 
-/*******************************************************************************
- * MAIN COMMAND PROCESSOR
- ******************************************************************************/
+static bool handle_delete(char *args, Store *s) {
+    int id = -1;
+    Student patch;
+    init_patch(&patch);
+    for (char *token = strtok(args, " "); token; token = strtok(NULL, " '")) {
+        if (parse_kv(token, &patch)) {
+            if (patch.id > 0) id = patch.id;
+        }
+    }
+
+    if (id < 0) {
+        fprintf(stderr, "DELETE requires ID to identify record.\n");
+        return false;
+    }
+
+    if (store_find_index_by_id(s, id) < 0) {
+        fprintf(stderr, "ID %d not found.\n", id);
+        return false;
+    }
+
+    printf("Are you sure you want to delete ID %d? (Y/N): ", id);
+    fflush(stdout);
+
+    char buf[16];
+    if (!fgets(buf, sizeof buf, stdin)) {
+        return false;
+    }
+
+    if (buf[0] != 'Y' && buf[0] != 'y') {
+        puts("Delete operation cancelled.");
+        return false;
+    }
+
+    if (!store_delete(s, id)) {
+        fprintf(stderr, "Failed to delete record with ID %d.\n", id);
+        return false;
+    }
+
+    puts("Record successfully deleted.");
+    return true;
+}
+
 bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
+    // Make a modifiable copy of the input line
     char line[512];
-    strncpy(line, line_in, sizeof line);
-    line[sizeof line - 1] = '\0';
-    
-    str_trim(line);
-    if (line[0] == '\0') return true;
-    
+    strncpy(line, line_in, sizeof(line));
+    line[sizeof(line) - 1] = '\0';
+
+    //split commands and arguments
     char *p = line;
     while (*p && !isspace((unsigned char)*p)) p++;
     char *cmd = line;
@@ -408,163 +213,148 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
         *p = '\0';
         args = p + 1;
     }
-    
     str_tolower(cmd);
 
-    // COMMAND: OPEN
     if (strcmp(cmd, "open") == 0) {
         int skipped = 0;
-        
         store_free(s);
         store_init(s);
-        
         if (cms_load(db_path, s, &skipped)) {
-            printf("CMS: The database file \"%s\" is successfully opened.\n", db_path);
-            print_menu();
+            printf("Database loaded. Total %zu records, skipped %d line(s).\n", s->size, skipped);
         } else {
-            puts("No existing database found. A new one will be created on SAVE.");
+            fprintf(stderr, "Failed to load database from %s\n", db_path);
         }
+
         return true;
     }
-    
-    // COMMAND: SAVE
+
     if (strcmp(cmd, "save") == 0) {
-        if (cms_save(db_path, s))
-            puts("Database successfully saved.");
-        else
-            puts("Save failed.");
-        return true;
-    }
-    
-    // COMMAND: SHOW
-    if (strcmp(cmd, "show") == 0) {
-        if (!args || strncasecmp(args, "summary", 7) != 0) {
-            bool sorted = false;
-            bool asc = true;
-            SortKey key = SORT_BY_ID;
-            
-            if (args && strcasestr(args, "sort by")) {
-                sorted = true;
-                if (strcasestr(args, "mark"))
-                    key = SORT_BY_MARK;
-                if (strcasestr(args, "desc"))
-                    asc = false;
-            }
-            
-            if (sorted)
-                store_sort(s, key, asc);
-            
-            puts("CMS: Here are all the records found in the table \"StudentRecords\".");
-            show_all(s);
-            return true;
-            
+        if (cms_save(db_path, s)) {
+            printf("Database saved to %s\n", db_path);
         } else {
-#if USE_FIXED_SIZE_ARRAY
-            Stats st = compute_stats(s->students, s->count);
-            printf("Total: %d\nAverage: %.2f\nHighest: %.2f",
-                   s->count, st.average, st.max_mark);
-#else
+            fprintf(stderr, "Failed to save database to %s\n", db_path);
+        }
+
+        return true;
+    }
+
+    if (strcmp(cmd, "show") == 0) {
+        // SHOW [ALL] [SORT BY ID|MARK [ASC|DESC]] | SHOW SUMMARY
+        if (!args || strncasecmp(args, "summary", 7) != 0) {
+        // maybe has sorting clause
+        bool sorted = false, asc = true; SortKey key = SORT_BY_ID;
+        if (args && str_icontains(args, "sort by")) {
+        sorted = true;
+        if (str_icontains(args, "mark")) key = SORT_BY_MARK;
+        if (str_icontains(args, "desc")) asc = false;
+        }
+        if (sorted) store_sort(s, key, asc);
+        show_all(s);
+        
+        } else {
             Stats st = compute_stats(s->data, s->size);
-            printf("Total: %zu\nAverage: %.2f\nHighest: %.2f",
-                   st.count, st.average, st.max_mark);
-#endif
-            
-            if (st.max_idx >= 0) {
-#if USE_FIXED_SIZE_ARRAY
-                printf(" (%s)\n", s->students[st.max_idx].name);
-#else
-                printf(" (%s)\n", s->data[st.max_idx].name);
-#endif
-            } else {
-                puts("");
-            }
-            
+            printf("Total: %zu\nAverage: %.2f\nHighest: %.2f", st.count, st.average, st.max_mark);
+            if (st.max_idx >= 0) printf(" (%s)\n", s->data[st.max_idx].name); else puts("");
             printf("Lowest: %.2f", st.min_mark);
-            
-            if (st.min_idx >= 0) {
-#if USE_FIXED_SIZE_ARRAY
-                printf(" (%s)\n", s->students[st.min_idx].name);
-#else
-                printf(" (%s)\n", s->data[st.min_idx].name);
-#endif
-            } else {
-                puts("");
-            }
-            
-            printf("Grade bands — A:%d B:%d C:%d D:%d F:%d\n",
-                   st.band_A, st.band_B, st.band_C, st.band_D, st.band_F);
-            return true;
+            if (st.min_idx >= 0) printf(" (%s)\n", s->data[st.min_idx].name); else puts("");
+            printf("Grade bands - A:%d B:%d C:%d D:%d F:%d\n", st.band_A, st.band_B, st.band_C, st.band_D, st.band_F);
         }
+
+        return true;
     }
-    
-    // COMMAND: INSERT - Use new implementation
+
     if (strcmp(cmd, "insert") == 0) {
-        cmd_insert(line, s);  // Pass full line to preserve quotes
+        if (!handle_insert(args ? args : "", s)) {
+            // Error printing handled in handler
+        }
+
         return true;
     }
-    
-    // COMMAND: UPDATE
-    if (strcmp(cmd, "update") == 0)
-        return handle_update(args ? args : "", s);
-    
-    // COMMAND: DELETE - Use new implementation
-    if (strcmp(cmd, "delete") == 0)
-        return handle_delete(args ? args : "", s);
-    
-    // COMMAND: QUERY
+    if (strcmp(cmd, "update") == 0) {
+        if (!handle_update(args ? args : "", s)) {
+            // Error printing handled in handler
+        }
+
+        return true;
+    }
+
+    if (strcmp(cmd, "delete") == 0) {
+        if (!handle_delete(args ? args : "", s)) {
+            // Error printing handled in handler
+        }
+
+        return true;
+    }
+
     if (strcmp(cmd, "query") == 0) {
-        int id = -1;
-        Student tmp;
-        init_patch(&tmp);
-        
-        for (char *tok = strtok(args ? args : "", " "); tok; tok = strtok(NULL, " ")) {
-            if (parse_kv(tok, &tmp)) {
-                if (tmp.id > 0) id = tmp.id;
-            }
-        }
-        
-        if (id <= 0) {
-            fputs("QUERY requires ID=...\n", stderr);
-            return true;
-        }
-        
-        int idx = store_find_index_by_id(s, id);
-        if (idx < 0) {
-            puts("Record does not exist.");
-            return true;
-        }
-        
-#if USE_FIXED_SIZE_ARRAY
-        const Student *st = &s->students[idx];
-#else
-        const Student *st = &s->data[idx];
-#endif
-        printf("%d\t%s\t%s\t%.2f\n", st->id, st->name, st->programme, st->mark);
-        return true;
+    int id = -1; Student tmp; init_patch(&tmp);
+    for (char *tok = strtok(args ? args : "", " "); tok; tok = strtok(NULL, " ")) {
+        if (parse_kv(tok, &tmp)) { if (tmp.id > 0) id = tmp.id; }
+    }
+
+    if (id <= 0) {
+        fputs("QUERY requires ID=...\n", stderr);
+        return true; 
+    }
+
+    int idx = store_find_index_by_id(s, id);
+    if (idx < 0) {
+        puts("Record does not exist.");
+        return true; 
     }
     
-    // COMMAND: HELP
+    const Student *st = &s->data[idx];
+    printf("%d\t%s\t%s\t%.2f\n", st->id, st->name, st->programme, st->mark);
+    return true;
+    }
+
     if (strcmp(cmd, "help") == 0) {
-        print_menu();
-        return true;
+        puts("Available commands:");
+        puts("  OPEN                 - Load database from the configured file (unsaved changes will be lost).");
+        puts("  SAVE                 - Save current database to the configured file.");
+        puts("  SHOW [ALL] [SORT BY ID|MARK [ASC|DESC]]");
+        puts("                       - Display records. Optional sort clause (default: ID ASC).");
+        puts("  SHOW SUMMARY         - Display statistics: count, average, min/max (with names), grade bands.");
+        puts("  INSERT k=v ...       - Add a new student. Required keys: ID, Name, Programme, Mark.");
+        puts("                         Example: INSERT ID=1 Name=\"Jane Doe\" Programme=CS Mark=85.5");
+        puts("  UPDATE k=v ...       - Update an existing student. ID is required to identify the record.");
+        puts("                         Only provide keys you want to change (ID, Name, Programme, Mark).");
+        puts("  DELETE ID=...        - Delete a student by ID (prompts for confirmation).");
+        puts("                         Example: DELETE ID=1");
+        puts("  QUERY ID=...         - Show a single record by ID.");
+        puts("                         Example: QUERY ID=1");
+        puts("  HELP                 - Show this help text.");
+        puts("  EXIT | QUIT          - Exit the program (use SAVE to persist changes).");
+        puts("");
+        puts("Notes:");
+        puts("  - Keys are case-insensitive (ID, Name, Programme, Mark).");
+        puts("  - ID must be an integer; Mark is a floating point number.");
+        puts("  - For multi-word values enclose them in double quotes: Name=\"John Smith\".");
+        puts("  - When parsing key=value pairs, spaces separate tokens; quoted values may contain spaces.");
+        puts("  - Use OPEN to reload the DB file; this will discard unsaved in-memory changes.");
+        puts("  - Use SAVE to write current in-memory data to the DB file.");
+        puts("");
+        puts("Examples:");
+        puts("  INSERT ID=2 Name=\"Alice Lee\" Programme=IT Mark=72.0");
+        puts("  UPDATE ID=2 Mark=75.5");
+        puts("  SHOW ALL SORT BY MARK DESC");
+    return true;
     }
-    
-    // COMMAND: EXIT/QUIT
-    if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) {
-        return false;
-    }
+    if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) { return false; }
+
 
     printf("Unknown command: %s (type HELP)\n", cmd);
     return true;
 }
 
-/*******************************************************************************
- * PRINT DECLARATION
- ******************************************************************************/
 void print_declaration(const char *team_name, const char *members_csv, const char *date_str) {
     puts("============================================");
     puts("We declare that this is our own work and ...");
-    puts("(Place the exact provided declaration text here.)");
-    printf("Team: %s\nMembers: %s\nDate: %s\n", team_name, members_csv, date_str);
-    puts("============================================");
+    puts("SIT's policy on copying does not allow the students to copy source code as well as assessment solutions\n"
+         "from another person, AI, or other places. It is the students' responsibility to guarantee that their\n"
+         "assessment solutions are their own work. Meanwhile, the students must also ensure that their work is\n"
+         "not accessible by others. Where such plagiarism is detected, both of the assessments involved will\n"
+         "receive ZERO mark.");
+    printf("Team: %s\n\nMembers: %s\nDate: %s\n", team_name, members_csv, date_str);
+    puts("");
 }

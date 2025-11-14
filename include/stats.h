@@ -9,10 +9,9 @@ typedef struct {
     float average;
     float min_mark, max_mark;
     int min_idx, max_idx;  // -1 if none
-    // Optional extension: grade band counts
     int band_A, band_B, band_C, band_D, band_F;
 } Stats;
 
-Stats compute_stats(const void *data, size_t count);
+Stats compute_stats(const Student *arr, size_t count);
 
 #endif // STATS_H

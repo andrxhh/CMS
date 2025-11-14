@@ -1,24 +1,22 @@
-/* 
- * MAIN.C - Main program entry point
- * 
- * This is the standard interactive CMS interface
- */
-
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "cmd.h"
+#include "store.h"
 
-/* 
- * MAIN FUNCTION - Entry point of the program
- */
+#define DB_FILENAME "db/P6_5-CMS.txt" // Change TeamName
+
+
 int main(void) {
+    // Print the exact non-plagiarism declaration block per assignment
+    char datebuf[32];
+    time_t now = time(NULL); struct tm *lt = localtime(&now);
+    strftime(datebuf, sizeof datebuf, "%Y-%m-%d", lt);
+    print_declaration("LAB-P6-5", "CHESTON LEROY ONG (2502701)\nAARON ALISON SILVA (2500461)\nAFIQAH BINTE MOHAMED ADNAN (2503067)\nANDREW CHIA KAI XUN BEDINA (2501298)\nCHUA JIA JUN (2500533)\n", datebuf);
+
     // Create and initialize store
     Store store;
     store_init(&store);
-    
-    // Database file path - using P6_5.txt as per your implementation
-    const char *db_path = "P6_5.txt";
     
     // Print program header
     printf("============================================\n");
@@ -29,26 +27,19 @@ int main(void) {
     printf("============================================\n\n");
     
     // Main command loop
-    char input[512];
-    bool running = true;
-    
-    while (running) {
-        printf("CMS> ");
-        fflush(stdout);
-        
-        // Read user input
-        if (!fgets(input, sizeof input, stdin)) {
-            break;
-        }
-        
-        // Process the command
-        running = cmd_process_line(input, &store, db_path);
-    }
-    
-    printf("\nThank you for using CMS. Goodbye!\n");
-    
-    // Clean up memory
-    store_free(&store);
-    
-    return 0;
+    char line[512];
+    for (;;) {
+       printf("CMS> "); fflush(stdout);
+       if (!fgets(line, sizeof line, stdin)) break; // EOF
+
+       // strip trailing newline
+       char *nl = strchr(line, '\n'); if (nl) *nl = '\0';
+       if (!cmd_process_line(line, &store, DB_FILENAME)) break;
+       }
+
+
+       // On exit, you may prompt to save unsaved changes (TODO: track dirty flag)
+       store_free(&store);
+       puts("Thank you for using CMS.\nGoodbye.");
+       return 0;
 }

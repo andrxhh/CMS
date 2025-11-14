@@ -1,61 +1,40 @@
-/* 
- * STATS.C - Statistics computation functions
- */
-
-#include <float.h>
 #include "stats.h"
 #include "student.h"
 
-/* 
- * COMPUTE STATISTICS
- */
-Stats compute_stats(const void *data, size_t count) {
-    const Student *students = (const Student *)data;
-    Stats s = {0};
-    
-    if (count == 0) {
-        s.max_idx = -1;
-        s.min_idx = -1;
-        return s;
-    }
-    
-    s.count = count;
-    s.max_mark = -FLT_MAX;
-    s.min_mark = FLT_MAX;
-    s.max_idx = -1;
-    s.min_idx = -1;
-    
+Stats compute_stats(const Student *arr, size_t size) {
+    Stats stats = {0};
+    stats.min_idx = -1;
+    stats.max_idx = -1;
+    if (size == 0) return stats;
     float sum = 0.0f;
-    
-    for (size_t i = 0; i < count; i++) {
-        float mark = students[i].mark;
-        sum += mark;
-        
-        if (mark > s.max_mark) {
-            s.max_mark = mark;
-            s.max_idx = (int)i;
+    stats.min_mark = arr[0].mark;
+    stats.max_mark = arr[0].mark;
+    stats.min_idx, stats.max_idx = 0;
+
+    for (size_t i = 0; i < size; i++) {
+        float m = arr[i].mark;
+        sum += m;
+
+        if (m < stats.min_mark) {
+            stats.min_mark = m;
+            stats.min_idx = (int)i;
         }
-        
-        if (mark < s.min_mark) {
-            s.min_mark = mark;
-            s.min_idx = (int)i;
+        if (m > stats.max_mark) {
+            stats.max_mark = m;
+            stats.max_idx = (int)i;
         }
-        
-        // Grade bands: A: >= 70, B: 60-69, C: 50-59, D: 40-49, F: < 40
-        if (mark >= 70.0f) {
-            s.band_A++;
-        } else if (mark >= 60.0f) {
-            s.band_B++;
-        } else if (mark >= 50.0f) {
-            s.band_C++;
-        } else if (mark >= 40.0f) {
-            s.band_D++;
-        } else {
-            s.band_F++;
-        }
+
+        // Grade bands: A>=85, B 75-84, C 65-74, D 50-64, F<50
+        if (m >= 85) stats.band_A++;
+        else if (m < 85 && m >= 75) stats.band_B++;
+        else if (m < 75 && m >= 65) stats.band_C++;
+        else if (m < 65 && m >= 50) stats.band_D++;
+        else stats.band_F++;
+
     }
-    
-    s.average = sum / count;
-    
-    return s;
+
+    stats.count = size;
+    stats.average = sum / (float)size;
+
+    return stats;
 }
