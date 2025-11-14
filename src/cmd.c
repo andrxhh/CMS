@@ -15,6 +15,55 @@ static void init_patch(Student *patch) {
     patch->mark = -1.0f;   // Sentinel for no change
 }
 
+static bool has_no_args(char *args, const char *cmd_name) {
+    if (args) {
+        str_trim(args);
+        if (args[0] != '\0') {
+            fprintf(stderr, "%s command does not take any arguments.\n", cmd_name);
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool parse_single_id_command(char *args, const char *cmd_name, int *out_id) {
+    if (!args) {
+        fprintf(stderr, "%s command requires ID argument.\n", cmd_name);
+        return false;
+    }
+    
+    if (strncasecmp(args, "ID=", 3) != 0) {
+        fprintf(stderr, "%s command requires ID argument in format ID=<value>.\n", cmd_name);
+        return false;
+    }
+
+    char *value_str = args + 3;
+    str_trim(value_str);
+
+    char *endptr;
+    long value = strtol(value_str, &endptr, 10);
+
+    if (endptr == value_str) {
+        fprintf(stderr, "No ID value provided for %s command.\n", cmd_name);
+        return false;
+    }
+
+    while (*endptr && isspace((unsigned char)*endptr)) endptr++; // Skip trailing whitespace
+
+    if (*endptr != '\0') {
+        fprintf(stderr, "Unexpected characters after ID value in %s command.\n", cmd_name);
+        return false;
+    }
+
+    if (!valid_id((int)value)) {
+        fprintf(stderr, "Invalid ID value for %s command. Must be 6-8 digits.\n", cmd_name);
+        return false;
+    }
+
+    *out_id = (int)value;
+    return true;
+}
+
 static void show_all(const Store *s){
     if (s->size == 0) {
         puts("No records.");
@@ -62,59 +111,116 @@ static void show_all(const Store *s){
     puts("");
 }
 
-static bool parse_kv(char *token, Student *patch) {
-    char *eq = strchr(token, '=');
-    if (!eq) {
-        return false;
-    }
-    *eq = '\0';
+// static bool parse_kv(char *token, Student *patch) {
+//     char *eq = strchr(token, '=');
+//     if (!eq) {
+//         return false;
+//     }
+//     *eq = '\0';
 
-    char *key = token;
-    char *value = eq + 1;
-    str_trim(key);
-    str_trim(value);
+//     char *key = token;
+//     char *value = eq + 1;
+//     str_trim(key);
+//     str_trim(value);
 
-    if (value[0] == '"') {
-        size_t len = strlen(value);
-        if (len >= 2 && value[len - 1] == '"') {
-            value[len-1] = '\0';
-            memmove(value, value + 1, len - 1);
-        }
-    }
+//     if (value[0] == '"') {
+//         size_t len = strlen(value);
+//         if (len >= 2 && value[len - 1] == '"') {
+//             value[len-1] = '\0';
+//             memmove(value, value + 1, len - 1);
+//         }
+//     }
 
-    if (str_ieq(key, "ID")) {
-        int id;
-        if(!parse_int(value, &id)) return false;
-        patch->id = id;
-        return true;
-    } else if (str_ieq(key, "Name")) {
-        strncpy(patch->name, value, sizeof(patch->name));
-        patch->name[sizeof(patch->name) - 1] = '\0';
-        return true;
-    } else if (str_ieq(key, "Programme")) {
-        strncpy(patch->programme, value, sizeof(patch->programme));
-        patch->programme[sizeof(patch->programme) - 1] = '\0';
-        return true;
-    } else if (str_ieq(key, "Mark")) {
-        float mark;
-        if (!parse_float(value, &mark)) return false;
-        patch->mark = mark;
-        return true;
-    }
+//     if (str_ieq(key, "ID")) {
+//         int id;
+//         if(!parse_int(value, &id)) return false;
+//         patch->id = id;
+//         return true;
+//     } else if (str_ieq(key, "Name")) {
+//         strncpy(patch->name, value, sizeof(patch->name));
+//         patch->name[sizeof(patch->name) - 1] = '\0';
+//         return true;
+//     } else if (str_ieq(key, "Programme")) {
+//         strncpy(patch->programme, value, sizeof(patch->programme));
+//         patch->programme[sizeof(patch->programme) - 1] = '\0';
+//         return true;
+//     } else if (str_ieq(key, "Mark")) {
+//         float mark;
+//         if (!parse_float(value, &mark)) return false;
+//         patch->mark = mark;
+//         return true;
+//     }
 
-    return false;
-}
+//     return false;
+// }
 
 static bool handle_insert(char *args, Store *s) {
+    printf("Insert args: %s\n", args);
     Student patch;
     init_patch(&patch);
 
-    for (char *token = strtok(args, " "); token; token = strtok(NULL, " ")) {
-        if (!parse_kv(token, &patch)) {
-            fprintf(stderr, "Invalid key-value pair: %s\n", token);
-            return false;
+    char *p = args;
+    while (p && *p) {
+        char *key_start = find_next_key(p); // Find start of next key
+        if (!key_start) {
+            break;
+        }
+
+        char *value_start = NULL;
+        if (str_icase_find(key_start, "ID=") == key_start) {
+            value_start = key_start + 3;
+        } else if (str_icase_find(key_start, "Name=") == key_start) {
+            value_start = key_start + 5;
+        } else if (str_icase_find(key_start, "Programme=") == key_start) {
+            value_start = key_start + 10;
+        } else if (str_icase_find(key_start, "Mark=") == key_start) {
+            value_start = key_start + 5;
+        } else {
+            // Unknown key
+            p = key_start + 1;
+            continue;
+        }
+
+        char *value_end = find_next_key(value_start); // Find start of next key or the end of string
+
+        char value_buf[256];
+        size_t len;
+        if (value_end == NULL) {
+            len = strlen(value_start);
+            if (len>sizeof(value_buf)-1) len=sizeof(value_buf)-1;
+            strncpy(value_buf, value_start, len);
+            p = NULL; // End of string
+        } else {
+            len = value_end - value_start;
+            if (len>sizeof(value_buf)-1) len=sizeof(value_buf)-1;
+            strncpy(value_buf, value_start, len);
+            p = value_end;
+        }
+
+        value_buf[len] = '\0';
+        str_trim(value_buf);
+
+        if (str_icase_find(key_start, "ID=") == key_start) {
+            if (!parse_int(value_buf, &patch.id)) {
+                fprintf(stderr, "Invalid ID value: %s\n", value_buf);
+                return false;
+            }
+        } else if (str_icase_find(key_start, "Name=") == key_start) {
+            strncpy(patch.name, value_buf, sizeof(patch.name));
+            patch.name[sizeof(patch.name) - 1] = '\0';
+        } else if (str_icase_find(key_start, "Programme=") == key_start) {
+            strncpy(patch.programme, value_buf, sizeof(patch.programme));
+            patch.programme[sizeof(patch.programme) - 1] = '\0';
+        } else if (str_icase_find(key_start, "Mark=") == key_start) {
+            if (!parse_float(value_buf, &patch.mark)) {
+                fprintf(stderr, "Invalid Mark value: %s\n", value_buf);
+                return false;
+            }
         }
     }
+
+    printf("Parsed Insert - ID: %d, Name: %s, Programme: %s, Mark: %.2f\n",
+           patch.id, patch.name, patch.programme, patch.mark);
 
     // Validate all fields are provided
     if (patch.id < 0 || patch.name[0] == '\0' || patch.programme[0] == '\0' || patch.mark < 0.0f) {
@@ -135,16 +241,77 @@ static bool handle_update(char *args, Store *s) {
     Student patch;
     init_patch(&patch);
 
-    for (char *token = strtok(args, " "); token; token = strtok(NULL, " ")) {
-        if (!parse_kv(token, &patch)) {
-            fprintf(stderr, "Invalid key-value pair: %s\n", token);
-            return false;
+    char *p = args;
+    while (p && *p) {
+        char *key_start = find_next_key(p); // Find start of next key
+        if (!key_start) {
+            break;
+        }
+
+        char *value_start = NULL;
+        if (str_icase_find(key_start, "ID=") == key_start) {
+            value_start = key_start + 3;
+        } else if (str_icase_find(key_start, "Name=") == key_start) {
+            value_start = key_start + 5;
+        } else if (str_icase_find(key_start, "Programme=") == key_start) {
+            value_start = key_start + 10;
+        } else if (str_icase_find(key_start, "Mark=") == key_start) {
+            value_start = key_start + 5;
+        } else {
+            // Unknown key
+            p = key_start + 1;
+            continue;
+        }
+
+        char *value_end = find_next_key(value_start); // Find start of next key or the end of string
+
+        char value_buf[256];
+        size_t len;
+        if (value_end == NULL) {
+            len = strlen(value_start);
+            if (len>sizeof(value_buf)-1) len=sizeof(value_buf)-1;
+            strncpy(value_buf, value_start, len);
+            p = NULL; // End of string
+        } else {
+            len = value_end - value_start;
+            if (len>sizeof(value_buf)-1) len=sizeof(value_buf)-1;
+            strncpy(value_buf, value_start, len);
+            p = value_end;
+        }
+
+        value_buf[len] = '\0';
+        str_trim(value_buf);
+
+        if (str_icase_find(key_start, "ID=") == key_start) {
+            if (!parse_int(value_buf, &patch.id)) {
+                fprintf(stderr, "Invalid ID value: %s\n", value_buf);
+                return false;
+            }
+        } else if (str_icase_find(key_start, "Name=") == key_start) {
+            strncpy(patch.name, value_buf, sizeof(patch.name));
+            patch.name[sizeof(patch.name) - 1] = '\0';
+        } else if (str_icase_find(key_start, "Programme=") == key_start) {
+            strncpy(patch.programme, value_buf, sizeof(patch.programme));
+            patch.programme[sizeof(patch.programme) - 1] = '\0';
+        } else if (str_icase_find(key_start, "Mark=") == key_start) {
+            if (!parse_float(value_buf, &patch.mark)) {
+                fprintf(stderr, "Invalid Mark value: %s\n", value_buf);
+                return false;
+            }
         }
     }
+
+    printf("Parsed Update - ID: %d, Name: %s, Programme: %s, Mark: %.2f\n",
+           patch.id, patch.name, patch.programme, patch.mark);
 
     if (patch.id < 0) {
         fprintf(stderr, "UPDATE requires existing ID to identify record.\n");
         return false;
+    }
+
+    if (patch.name[0] == '\0' && patch.programme[0] == '\0' && patch.mark < 0.0f) {
+        // Only an ID was provided.
+        printf("Warning: UPDATE command given with only an ID. No fields to update.\n");
     }
 
     if (!store_update(s, patch.id, &patch)) {
@@ -157,17 +324,8 @@ static bool handle_update(char *args, Store *s) {
 }
 
 static bool handle_delete(char *args, Store *s) {
-    int id = -1;
-    Student patch;
-    init_patch(&patch);
-    for (char *token = strtok(args, " "); token; token = strtok(NULL, " '")) {
-        if (parse_kv(token, &patch)) {
-            if (patch.id > 0) id = patch.id;
-        }
-    }
-
-    if (id < 0) {
-        fprintf(stderr, "DELETE requires ID to identify record.\n");
+    int id;
+    if (!parse_single_id_command(args, "DELETE", &id)) {
         return false;
     }
 
@@ -198,6 +356,28 @@ static bool handle_delete(char *args, Store *s) {
     return true;
 }
 
+static bool handle_query(char *args, const Store *s) {
+    int id;
+    if (!parse_single_id_command(args, "QUERY", &id)) {
+        return false;
+    }
+
+    if (id <= 0) {
+        fputs("QUERY requires ID=...\n", stderr);
+        return false; 
+    }
+
+    int idx = store_find_index_by_id(s, id);
+    if (idx < 0) {
+        puts("Record does not exist.");
+        return false; 
+    }
+    
+    const Student *st = &s->data[idx];
+    printf("%d\t%s\t%s\t%.2f\n", st->id, st->name, st->programme, st->mark);
+    return true;
+}
+
 bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
     // Make a modifiable copy of the input line
     char line[512];
@@ -216,6 +396,10 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
     str_tolower(cmd);
 
     if (strcmp(cmd, "open") == 0) {
+        if (!has_no_args(args, "OPEN")) {
+            return true;
+        }
+
         int skipped = 0;
         store_free(s);
         store_init(s);
@@ -229,6 +413,10 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
     }
 
     if (strcmp(cmd, "save") == 0) {
+        if (!has_no_args(args, "SAVE")) {
+            return true;
+        }
+
         if (cms_save(db_path, s)) {
             printf("Database saved to %s\n", db_path);
         } else {
@@ -287,28 +475,17 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
     }
 
     if (strcmp(cmd, "query") == 0) {
-    int id = -1; Student tmp; init_patch(&tmp);
-    for (char *tok = strtok(args ? args : "", " "); tok; tok = strtok(NULL, " ")) {
-        if (parse_kv(tok, &tmp)) { if (tmp.id > 0) id = tmp.id; }
-    }
-
-    if (id <= 0) {
-        fputs("QUERY requires ID=...\n", stderr);
-        return true; 
-    }
-
-    int idx = store_find_index_by_id(s, id);
-    if (idx < 0) {
-        puts("Record does not exist.");
-        return true; 
-    }
-    
-    const Student *st = &s->data[idx];
-    printf("%d\t%s\t%s\t%.2f\n", st->id, st->name, st->programme, st->mark);
-    return true;
+        if (!handle_query(args ? args : "", s)) {
+            // Error printing handled in handler
+        }
+        return true;
     }
 
     if (strcmp(cmd, "help") == 0) {
+        if (!has_no_args(args, "HELP")) {
+            return true;
+        }
+        
         puts("Available commands:");
         puts("  OPEN                 - Load database from the configured file (unsaved changes will be lost).");
         puts("  SAVE                 - Save current database to the configured file.");

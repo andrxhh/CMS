@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include "store.h"
 #include "util.h"
@@ -46,7 +47,23 @@ int store_find_index_by_id(const Store *s, int id) {
 }
 
 bool store_insert(Store *s, Student st) {
-    if (!valid_id(st.id) || !valid_mark(st.mark) || !valid_text(st.name) || !valid_text(st.programme)) {
+    // if (!valid_id(st.id) || !valid_mark(st.mark) || !valid_text(st.name) || !valid_text(st.programme)) {
+    //     return false;
+    // }
+    if (!valid_id(st.id)) {
+        fprintf(stderr, "Invalid ID: %d\n", st.id);
+        return false;
+    }
+    if (!valid_text(st.name)) {
+        fprintf(stderr, "Invalid Name: %s\n", st.name);
+        return false;
+    }
+    if (!valid_text(st.programme)) {
+        fprintf(stderr, "Invalid Programme: %s\n", st.programme);
+        return false;
+    }
+    if (!valid_mark(st.mark)) {
+        fprintf(stderr, "Invalid Mark: %.2f\n", st.mark);
         return false;
     }
 

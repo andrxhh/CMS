@@ -54,7 +54,7 @@ bool str_ieq(const char *a, const char *b) {
 }
 
 
-// Case-insensitive substring find (like strcasestr). Returns pointer into haystack, or NULL.
+// Case-insensitive substring find. Returns pointer into haystack, or NULL.
 const char *str_icase_find(const char *hay, const char *needle) {
     if (!hay || !needle) return NULL;
     if (*needle == '\0') return hay; // empty needle: match at start
@@ -73,6 +73,66 @@ const char *str_icase_find(const char *hay, const char *needle) {
 
 bool str_icontains(const char *hay, const char *needle) {
     return str_icase_find(hay, needle) != NULL;
+}
+
+// char* smart_strtok(char **str, const char *delim, bool *in_quote_error) {
+//     if (!str || !*str) {
+//         return NULL;
+//     }
+
+//     char *p = *str;
+//     *in_quote_error = false;
+
+//     while (*p && strchr(delim, *p)) { // Skip leading delimiters
+//         p++;
+//     }
+
+//     if (*p == '\0') {
+//         *str = p;
+//         return NULL; // At the end, no more tokens
+//     }
+
+//     char *token_start = p;
+//     bool in_quote = false;
+
+//     while (*p) {
+//         if (*p == '"') {
+//             in_quote = !in_quote; // Toggle quote state
+//         }
+
+//         if (!in_quote && strchr(delim, *p)) {
+//             *p = '\0'; // Terminate token
+//             *str = p + 1;
+//             return token_start;
+//         }
+//         p++;
+//     }
+
+//     *str = p; // Set pointer to end
+//     if (in_quote) {
+//         *in_quote_error = true; // Unmatched quote detected
+//         return NULL;
+//     }
+
+//     return token_start; // Return last token
+// }
+
+// Helper function to find the next key position in the string
+char* find_next_key(char *p) {
+    char *next_key = NULL;
+    char *found;
+
+    const char *keys[] = {"ID=", "Name=", "Programme=", "Mark="};
+    size_t num_keys = sizeof(keys) / sizeof(keys[0]);
+
+    for (size_t i = 0; i<num_keys; i++) {
+        found = (char*)str_icase_find(p, keys[i]);
+        if (found && (next_key == NULL || found < next_key)) {
+            next_key = found;
+        }
+    }
+
+    return next_key;
 }
 
 bool parse_int(const char *s, int *out) {
