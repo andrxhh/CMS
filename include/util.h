@@ -16,7 +16,7 @@ bool str_icontains(const char *haystack, const char *needle);
 char* smart_strtok(char **str, const char *delim, bool *in_quote_error);
 
 // Find the next key position in a string
-char* find_next_key(char *p);
+char* find_next_key(char *p, const char **found_keyname);
 
 // Parsing helpers
 bool parse_int(const char *s, int *out);      // Parse string to int with error checking

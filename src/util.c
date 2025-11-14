@@ -118,21 +118,24 @@ bool str_icontains(const char *hay, const char *needle) {
 // }
 
 // Helper function to find the next key position in the string
-char* find_next_key(char *p) {
-    char *next_key = NULL;
-    char *found;
+char* find_next_key(char *p, const char **found_keyname) {
+    char *next_key_pos = NULL;
+    *found_keyname = NULL;
 
-    const char *keys[] = {"ID=", "Name=", "Programme=", "Mark="};
+    const char *keys[] = {"ID", "Name", "Programme", "Mark"};
     size_t num_keys = sizeof(keys) / sizeof(keys[0]);
 
     for (size_t i = 0; i<num_keys; i++) {
-        found = (char*)str_icase_find(p, keys[i]);
-        if (found && (next_key == NULL || found < next_key)) {
-            next_key = found;
+        char *found_pos = (char*)str_icase_find(p, keys[i]);
+        if (found_pos && (next_key_pos == NULL || found_pos < next_key_pos)) {
+            if (found_pos == p || isspace((unsigned char)*(found_pos - 1))) { // Ensure key is at start or preceded by space
+                next_key_pos = found_pos;
+                *found_keyname = (char*)keys[i];
+            }
         }
     }
 
-    return next_key;
+    return next_key_pos;
 }
 
 bool parse_int(const char *s, int *out) {

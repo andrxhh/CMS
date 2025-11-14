@@ -111,6 +111,100 @@ static void show_all(const Store *s){
     puts("");
 }
 
+static bool handle_find(char *args, Store *s) {
+    char *column = strtok(args, " ");
+    char *op = strtok(NULL, " ");
+    char *value = strtok(NULL, "");
+
+    if (!column || !op || !value) { // Missing arguments
+        fprintf(stderr, "Error: FIND requires 3 arguments. Syntax: FIND <Column> <Operator> <Value>\n");
+        fprintf(stderr, "Example: FIND Name CONTAINS \"Wang\"\n");
+        fprintf(stderr, "Example: FIND Mark > 75\n");
+        return false;
+    }
+
+    str_trim(column); str_tolower(column);
+    str_trim(op); str_tolower(op);
+    str_trim(value);
+
+    size_t len = strlen(value);
+    if (len >= 2 && value[0] == '"' && value[len - 1] == '"') {
+        // Remove surrounding quotes
+        value[len - 1] = '\0';
+        memmove(value, value + 1, len - 1);
+    }
+
+    float mark_value = 0.0f;
+    bool num_filter = false;
+    if (strcmp(column, "mark") == 0) {
+        if (!parse_float(value, &mark_value)) {
+            fprintf(stderr, "Error: Invalid mark value for FIND command: %s\n", value);
+            return false;
+        }
+        num_filter = true;
+    }
+
+    int match_count = 0;
+    for (size_t i = 0; i<s->size; i++) {
+        const Student *st = &s->data[i];
+        bool match = false;
+
+        if (strcmp(column, "name") == 0) {
+            if (strcmp(op, "=") == 0) {
+                match = str_ieq(st->name, value);
+            } else if (strcmp(op, "contains") == 0) {
+                match = (str_icase_find(st->name, value) != NULL);
+            } else {
+                fprintf(stderr, "Error: Unsupported operator for Name column: %s\n", op);
+                return false;
+            }
+        } else if (strcmp(column, "programme") == 0) {
+            if (strcmp(op, "=") == 0) {
+                match = str_ieq(st->name, value);
+            } else if (strcmp(op, "contains") == 0) {
+                match = (str_icase_find(st->programme, value) != NULL);
+            } else {
+                fprintf(stderr, "Error: Unsupported operator for Programme column: %s\n", op);
+                return false;
+            }
+        } else if (strcmp(column, "mark") == 0) {
+            if (strcmp(op, "=") == 0) {
+                match = (st->mark >= mark_value - 0.01f && st->mark <= mark_value + 0.01f);
+            } else if (strcmp(op, ">") == 0) {
+                match = (st->mark > mark_value);
+            } else if (strcmp(op, "<") == 0) {
+                match = (st->mark < mark_value);
+            } else if (strcmp(op, ">=") == 0) {
+                match = (st->mark >= mark_value);
+            } else if (strcmp(op, "<=") == 0) {
+                match = (st->mark <= mark_value);
+            } else {
+                fprintf(stderr, "Error: Unsupported operator for Mark column: %s\n", op);
+                return false;
+            }
+        } else {
+            fprintf(stderr, "Error: Unsupported column for FIND command: %s\nUse Name, Programme, Mark.\n", column);
+        }
+
+        if (match) {
+            if (match_count == 0) {
+                // Print header on first match
+                printf("ID\tName\tProgramme\tMark\n");
+            }
+            printf("%d\t%s\t%s\t%.2f\n", st->id, st->name, st->programme, st->mark);
+            match_count++;
+        }
+    }
+
+    if (match_count == 0) {
+        puts("No matching records found.");
+    } else {
+        printf("Total matches: %d\n", match_count);
+    }
+    
+    return true;
+}
+
 // static bool parse_kv(char *token, Student *patch) {
 //     char *eq = strchr(token, '=');
 //     if (!eq) {
@@ -161,57 +255,64 @@ static bool handle_insert(char *args, Store *s) {
 
     char *p = args;
     while (p && *p) {
-        char *key_start = find_next_key(p); // Find start of next key
+        const char *key_name= NULL;
+        char *key_start = find_next_key(p, &key_name); // Find start of next key
         if (!key_start) {
             break;
         }
 
-        char *value_start = NULL;
-        if (str_icase_find(key_start, "ID=") == key_start) {
-            value_start = key_start + 3;
-        } else if (str_icase_find(key_start, "Name=") == key_start) {
-            value_start = key_start + 5;
-        } else if (str_icase_find(key_start, "Programme=") == key_start) {
-            value_start = key_start + 10;
-        } else if (str_icase_find(key_start, "Mark=") == key_start) {
-            value_start = key_start + 5;
-        } else {
-            // Unknown key
-            p = key_start + 1;
-            continue;
+        char *eq = strchr(key_start + strlen(key_name), '=');
+
+        char *check_ptr = key_start + strlen(key_name);
+        while(check_ptr < eq && isspace((unsigned char)*check_ptr)) {
+            check_ptr++;
         }
 
-        char *value_end = find_next_key(value_start); // Find start of next key or the end of string
+        if (!eq || check_ptr != eq) {
+            fprintf(stderr, "Malformed key-value pair: Missing or invalid '=' after key %s.\n", key_start);
+            return false;
+        }
+
+        char *value_start = eq + 1;
+        while (*value_start && isspace((unsigned char)*value_start)) value_start++;
+
+        const char *next_key = NULL;
+        char *value_end = find_next_key(value_start, &next_key); // Find start of next key or the end of string
 
         char value_buf[256];
         size_t len;
         if (value_end == NULL) {
             len = strlen(value_start);
-            if (len>sizeof(value_buf)-1) len=sizeof(value_buf)-1;
-            strncpy(value_buf, value_start, len);
             p = NULL; // End of string
         } else {
             len = value_end - value_start;
-            if (len>sizeof(value_buf)-1) len=sizeof(value_buf)-1;
-            strncpy(value_buf, value_start, len);
             p = value_end;
         }
 
+        if (len > sizeof(value_buf)-1) len = sizeof(value_buf)-1;
+        strncpy(value_buf, value_start, len);
         value_buf[len] = '\0';
         str_trim(value_buf);
 
-        if (str_icase_find(key_start, "ID=") == key_start) {
-            if (!parse_int(value_buf, &patch.id)) {
+        size_t value_len = strlen(value_buf);
+        if (value_len > 2 && value_buf[0] == '"' && value_buf[value_len - 1] == '"') {
+            // Remove surrounding quotes
+            value_buf[value_len - 1] = '\0';
+            memmove(value_buf, value_buf + 1, value_len - 1);
+        }
+
+        if (str_ieq(key_name, "ID")) {
+            if(!parse_int(value_buf, &patch.id)) {
                 fprintf(stderr, "Invalid ID value: %s\n", value_buf);
                 return false;
             }
-        } else if (str_icase_find(key_start, "Name=") == key_start) {
+        } else if (str_ieq(key_name, "Name")) {
             strncpy(patch.name, value_buf, sizeof(patch.name));
             patch.name[sizeof(patch.name) - 1] = '\0';
-        } else if (str_icase_find(key_start, "Programme=") == key_start) {
+        } else if (str_ieq(key_name, "Programme")) {
             strncpy(patch.programme, value_buf, sizeof(patch.programme));
             patch.programme[sizeof(patch.programme) - 1] = '\0';
-        } else if (str_icase_find(key_start, "Mark=") == key_start) {
+        } else if (str_ieq(key_name, "Mark")) {
             if (!parse_float(value_buf, &patch.mark)) {
                 fprintf(stderr, "Invalid Mark value: %s\n", value_buf);
                 return false;
@@ -243,57 +344,64 @@ static bool handle_update(char *args, Store *s) {
 
     char *p = args;
     while (p && *p) {
-        char *key_start = find_next_key(p); // Find start of next key
+        const char *key_name= NULL;
+        char *key_start = find_next_key(p, &key_name); // Find start of next key
         if (!key_start) {
             break;
         }
 
-        char *value_start = NULL;
-        if (str_icase_find(key_start, "ID=") == key_start) {
-            value_start = key_start + 3;
-        } else if (str_icase_find(key_start, "Name=") == key_start) {
-            value_start = key_start + 5;
-        } else if (str_icase_find(key_start, "Programme=") == key_start) {
-            value_start = key_start + 10;
-        } else if (str_icase_find(key_start, "Mark=") == key_start) {
-            value_start = key_start + 5;
-        } else {
-            // Unknown key
-            p = key_start + 1;
-            continue;
+        char *eq = strchr(key_start + strlen(key_name), '=');
+
+        char *check_ptr = key_start + strlen(key_name);
+        while(check_ptr < eq && isspace((unsigned char)*check_ptr)) {
+            check_ptr++;
         }
 
-        char *value_end = find_next_key(value_start); // Find start of next key or the end of string
+        if (!eq || check_ptr != eq) {
+            fprintf(stderr, "Malformed key-value pair: Missing or invalid '=' after key %s.\n", key_start);
+            return false;
+        }
+
+        char *value_start = eq + 1;
+        while (*value_start && isspace((unsigned char)*value_start)) value_start++;
+
+        const char *next_key = NULL;
+        char *value_end = find_next_key(value_start, &next_key); // Find start of next key or the end of string
 
         char value_buf[256];
         size_t len;
         if (value_end == NULL) {
             len = strlen(value_start);
-            if (len>sizeof(value_buf)-1) len=sizeof(value_buf)-1;
-            strncpy(value_buf, value_start, len);
             p = NULL; // End of string
         } else {
             len = value_end - value_start;
-            if (len>sizeof(value_buf)-1) len=sizeof(value_buf)-1;
-            strncpy(value_buf, value_start, len);
             p = value_end;
         }
 
+        if (len > sizeof(value_buf)-1) len = sizeof(value_buf)-1;
+        strncpy(value_buf, value_start, len);
         value_buf[len] = '\0';
         str_trim(value_buf);
 
-        if (str_icase_find(key_start, "ID=") == key_start) {
-            if (!parse_int(value_buf, &patch.id)) {
+        size_t value_len = strlen(value_buf);
+        if (value_len > 2 && value_buf[0] == '"' && value_buf[value_len - 1] == '"') {
+            // Remove surrounding quotes
+            value_buf[value_len - 1] = '\0';
+            memmove(value_buf, value_buf + 1, value_len - 1);
+        }
+
+        if (str_ieq(key_name, "ID")) {
+            if(!parse_int(value_buf, &patch.id)) {
                 fprintf(stderr, "Invalid ID value: %s\n", value_buf);
                 return false;
             }
-        } else if (str_icase_find(key_start, "Name=") == key_start) {
+        } else if (str_ieq(key_name, "Name")) {
             strncpy(patch.name, value_buf, sizeof(patch.name));
             patch.name[sizeof(patch.name) - 1] = '\0';
-        } else if (str_icase_find(key_start, "Programme=") == key_start) {
+        } else if (str_ieq(key_name, "Programme")) {
             strncpy(patch.programme, value_buf, sizeof(patch.programme));
             patch.programme[sizeof(patch.programme) - 1] = '\0';
-        } else if (str_icase_find(key_start, "Mark=") == key_start) {
+        } else if (str_ieq(key_name, "Mark")) {
             if (!parse_float(value_buf, &patch.mark)) {
                 fprintf(stderr, "Invalid Mark value: %s\n", value_buf);
                 return false;
@@ -481,11 +589,18 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
         return true;
     }
 
+    if (strcmp(cmd, "find") == 0) {
+        if (!handle_find(args ? args : "", s)) {
+            // Error printing handled in handler
+        }
+        return true;
+    }
+
     if (strcmp(cmd, "help") == 0) {
         if (!has_no_args(args, "HELP")) {
             return true;
         }
-        
+
         puts("Available commands:");
         puts("  OPEN                 - Load database from the configured file (unsaved changes will be lost).");
         puts("  SAVE                 - Save current database to the configured file.");
