@@ -615,6 +615,12 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
         puts("                         Example: DELETE ID=1");
         puts("  QUERY ID=...         - Show a single record by ID.");
         puts("                         Example: QUERY ID=1");
+        puts("  FIND <Column> <Op> <Value>");
+        puts("                       - Search records. Columns: Name, Programme, Mark.");
+        puts("                         Operators for Name/Programme: =, CONTAINS (case-insensitive).");
+        puts("                         Operators for Mark: =, >, <, >=, <=.");
+        puts("                         Value for strings may be quoted, e.g. FIND Name CONTAINS \"Wang\".");
+        puts("                         Example: FIND Mark > 75");
         puts("  HELP                 - Show this help text.");
         puts("  EXIT | QUIT          - Exit the program (use SAVE to persist changes).");
         puts("");
@@ -630,6 +636,10 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
         puts("  INSERT ID=2 Name=\"Alice Lee\" Programme=IT Mark=72.0");
         puts("  UPDATE ID=2 Mark=75.5");
         puts("  SHOW ALL SORT BY MARK DESC");
+        puts("  FIND Name CONTAINS \"Wang\"");
+        puts("  FIND Mark >= 85");
+        return true;
+        
     return true;
     }
     if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) { return false; }
