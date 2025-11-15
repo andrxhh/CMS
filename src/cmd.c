@@ -431,20 +431,42 @@ static bool handle_update(char *args, Store *s) {
     return true;
 }
 
+/*
+    This is a delete function where it handles the DELETE command entered by the user.
+    It takes 2 things:
+    1. 'args' -> the arguments string following the DELETE command.
+    2. 's' -> the Store structure that contains the all of the student records.
+
+    This function will:
+    - extract STUDENT ID from the user's input 
+    - check if the ID exists in the database
+    - asks the user to confirm the deletion of the id
+
+    If the user confirms the deletion , the code will return true after deleting the record.
+    If the user cancels the deletion or if any error occurs, the code will return false.
+*/ 
 static bool handle_delete(char *args, Store *s) {
     int id;
+
+    // Extracting ID from the arguments , will pull out number after "ID=".
+    // If parsing fails, return false.
     if (!parse_single_id_command(args, "DELETE", &id)) {
-        return false;
+        return false; 
     }
 
+    
+    //Check if the ID exists in the database.
+    //If not found, print error message and return false.
     if (store_find_index_by_id(s, id) < 0) {
         fprintf(stderr, "ID %d not found.\n", id);
         return false;
     }
 
+    //Prompt user for confirmation before deletion.
     printf("Are you sure you want to delete ID %d? (Y/N): ", id);
     fflush(stdout);
 
+    // Read user input for confirmation.
     char buf[16];
     if (!fgets(buf, sizeof buf, stdin)) {
         return false;
@@ -454,7 +476,8 @@ static bool handle_delete(char *args, Store *s) {
         puts("Delete operation cancelled.");
         return false;
     }
-
+    // Attempt to delete the record with the specified ID from the database.
+    // If failed to delete , it will print an error message and return false to try again.
     if (!store_delete(s, id)) {
         fprintf(stderr, "Failed to delete record with ID %d.\n", id);
         return false;
