@@ -295,6 +295,24 @@ static bool handle_insert(char *args, Store *s) {
     return true;
 }
 
+/*
+    This is an update function where it handles the UPDATE command entered by the user.
+    It takes 2 things:
+    1. 'args' -> the arguments string following the UPDATE command.
+    2. 's' -> the Store structure that contains all of the student records.
+
+    This function will:
+    - Parse key-value pairs from the args string (e.g., ID=123 Name="John" Mark=85.5)
+    - Extract and validate the STUDENT ID (required to identify which record to update)
+    - Extract optional fields: Name, Programme, and Mark
+    - Handle quoted values and whitespace trimming
+    - Validate data types (ID must be integer, Mark must be float)
+    - Check if the ID exists in the database via store_update()
+    - Update only the fields provided (partial updates allowed)
+    - Return true on success, false on failure (with appropriate error messages)
+    
+    Note: ID is mandatory; other fields are optional for partial updates.
+*/ 
 static bool handle_update(char *args, Store *s) {
     Student patch;
     init_patch(&patch);
