@@ -1,2 +1,3 @@
 # Ignore all Windows executables
 *.exe
+obj/
