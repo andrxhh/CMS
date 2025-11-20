@@ -205,49 +205,6 @@ static bool handle_find(char *args, Store *s) {
     return true;
 }
 
-// static bool parse_kv(char *token, Student *patch) {
-//     char *eq = strchr(token, '=');
-//     if (!eq) {
-//         return false;
-//     }
-//     *eq = '\0';
-
-//     char *key = token;
-//     char *value = eq + 1;
-//     str_trim(key);
-//     str_trim(value);
-
-//     if (value[0] == '"') {
-//         size_t len = strlen(value);
-//         if (len >= 2 && value[len - 1] == '"') {
-//             value[len-1] = '\0';
-//             memmove(value, value + 1, len - 1);
-//         }
-//     }
-
-//     if (str_ieq(key, "ID")) {
-//         int id;
-//         if(!parse_int(value, &id)) return false;
-//         patch->id = id;
-//         return true;
-//     } else if (str_ieq(key, "Name")) {
-//         strncpy(patch->name, value, sizeof(patch->name));
-//         patch->name[sizeof(patch->name) - 1] = '\0';
-//         return true;
-//     } else if (str_ieq(key, "Programme")) {
-//         strncpy(patch->programme, value, sizeof(patch->programme));
-//         patch->programme[sizeof(patch->programme) - 1] = '\0';
-//         return true;
-//     } else if (str_ieq(key, "Mark")) {
-//         float mark;
-//         if (!parse_float(value, &mark)) return false;
-//         patch->mark = mark;
-//         return true;
-//     }
-
-//     return false;
-// }
-
 static bool handle_insert(char *args, Store *s) {
     printf("Insert args: %s\n", args);
     Student patch;
