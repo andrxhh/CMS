@@ -70,11 +70,19 @@ static bool parse_args_to_patch(char *args, Student *patch) {
         value_buf[len] = '\0';
         str_trim(value_buf);
 
-        // Strip quotes
+        // If value begins with a quote, ensure it is properly closed
         size_t value_len = strlen(value_buf);
-        if (value_len >= 2 && value_buf[0] == '"' && value_buf[value_len - 1] == '"') {
+        if (value_len > 0 && value_buf[0] == '"') {
+            if (value_buf[value_len - 1] != '"') {
+                fprintf(stderr, "Malformed quoted value for key %s: unmatched '\"'\n", key_name);
+                return false;
+            }
+            // remove surrounding quotes
             value_buf[value_len - 1] = '\0';
             memmove(value_buf, value_buf + 1, value_len - 1);
+            value_len -= 2;
+            if ((int)value_len < 0) value_len = 0;
+            value_buf[value_len] = '\0';
         }
 
         // Assign to patch
@@ -84,11 +92,25 @@ static bool parse_args_to_patch(char *args, Student *patch) {
                 return false;
             }
         } else if (str_ieq(key_name, "Name")) {
-            strncpy(patch->name, value_buf, sizeof(patch->name));
-            patch->name[sizeof(patch->name) - 1] = '\0';
+            if (strlen(value_buf) >= sizeof(patch->name)) {
+                fprintf(stderr, "Name too long (max %zu chars): %s\n", sizeof(patch->name)-1, value_buf);
+                return false;
+            }
+            if (!valid_text(value_buf)) {
+                fprintf(stderr, "Invalid Name: %s\n", value_buf);
+                return false;
+            }
+            strcpy(patch->name, value_buf);
         } else if (str_ieq(key_name, "Programme")) {
-            strncpy(patch->programme, value_buf, sizeof(patch->programme));
-            patch->programme[sizeof(patch->programme) - 1] = '\0';
+            if (strlen(value_buf) >= sizeof(patch->programme)) {
+                fprintf(stderr, "Programme too long (max %zu chars): %s\n", sizeof(patch->programme)-1, value_buf);
+                return false;
+            }
+            if (!valid_text(value_buf)) {
+                fprintf(stderr, "Invalid Programme: %s\n", value_buf);
+                return false;
+            }
+            strcpy(patch->programme, value_buf);
         } else if (str_ieq(key_name, "Mark")) {
             if (!parse_float(value_buf, &patch->mark)) {
                 fprintf(stderr, "Invalid Mark value: %s\n", value_buf);
@@ -484,6 +506,13 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
     strncpy(line, line_in, sizeof(line));
     line[sizeof(line) - 1] = '\0';
 
+    // Ignore blank lines and comment lines (support '#' and '--')
+    char *tmp = line;
+    while (*tmp && isspace((unsigned char)*tmp)) tmp++;
+    if (*tmp == '\0') return true; // blank
+    if (*tmp == '#') return true; // comment
+    if (*tmp == '-' && *(tmp+1) == '-') return true; // comment start with --
+
     //split commands and arguments
     char *p = line;
     while (*p && !isspace((unsigned char)*p)) p++;
@@ -495,7 +524,7 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
     }
     str_tolower(cmd);
 
-    if (strcmp(cmd, "open") == 0) {
+    if (strcmp(cmd, "open") == 0 || strcmp(cmd, "load") == 0) {
         if (!has_no_args(args, "OPEN")) {
             return true;
         }
@@ -528,16 +557,20 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
     }
 
     if (strcmp(cmd, "save") == 0) {
-        if (!has_no_args(args, "SAVE")) {
-            return true;
+        // Allow optional filename: SAVE [path]
+        if (args) {
+            str_trim(args);
+        }
+        const char *save_path = db_path;
+        if (args && args[0] != '\0') {
+            save_path = args; // save to specified path
         }
 
-        if (cms_save(db_path, s)) {
-            printf("Database saved to %s\n", db_path);
+        if (cms_save(save_path, s)) {
+            printf("Database saved to %s\n", save_path);
         } else {
-            fprintf(stderr, "Failed to save database to %s\n", db_path);
+            fprintf(stderr, "Failed to save database to %s\n", save_path);
         }
-
         return true;
     }
 

@@ -75,48 +75,6 @@ bool str_icontains(const char *hay, const char *needle) {
     return str_icase_find(hay, needle) != NULL;
 }
 
-// char* smart_strtok(char **str, const char *delim, bool *in_quote_error) {
-//     if (!str || !*str) {
-//         return NULL;
-//     }
-
-//     char *p = *str;
-//     *in_quote_error = false;
-
-//     while (*p && strchr(delim, *p)) { // Skip leading delimiters
-//         p++;
-//     }
-
-//     if (*p == '\0') {
-//         *str = p;
-//         return NULL; // At the end, no more tokens
-//     }
-
-//     char *token_start = p;
-//     bool in_quote = false;
-
-//     while (*p) {
-//         if (*p == '"') {
-//             in_quote = !in_quote; // Toggle quote state
-//         }
-
-//         if (!in_quote && strchr(delim, *p)) {
-//             *p = '\0'; // Terminate token
-//             *str = p + 1;
-//             return token_start;
-//         }
-//         p++;
-//     }
-
-//     *str = p; // Set pointer to end
-//     if (in_quote) {
-//         *in_quote_error = true; // Unmatched quote detected
-//         return NULL;
-//     }
-
-//     return token_start; // Return last token
-// }
-
 // Helper function to find the next key position in the string
 char* find_next_key(char *p, const char **found_keyname) {
     char *next_key_pos = NULL;
@@ -126,12 +84,32 @@ char* find_next_key(char *p, const char **found_keyname) {
     size_t num_keys = sizeof(keys) / sizeof(keys[0]);
 
     for (size_t i = 0; i<num_keys; i++) {
-        char *found_pos = (char*)str_icase_find(p, keys[i]);
-        if (found_pos && (next_key_pos == NULL || found_pos < next_key_pos)) {
-            if (found_pos == p || isspace((unsigned char)*(found_pos - 1))) { // Ensure key is at start or preceded by space
+        char *search = p;
+        while (1) {
+            char *found_pos = (char*)str_icase_find(search, keys[i]);
+            if (!found_pos) break;
+
+            // Ensure key is at start or preceded by whitespace
+            if (!(found_pos == p || isspace((unsigned char)*(found_pos - 1)))) {
+                // Not a separate token, skip this occurrence
+                search = found_pos + 1;
+                continue;
+            }
+
+            // Check if found_pos lies inside a quoted region. Count unescaped quotes up to found_pos.
+            int quote_count = 0;
+            for (char *q = p; q < found_pos; ++q) if (*q == '"') ++quote_count;
+            if (quote_count % 2 == 1) {
+                // inside quotes, ignore this match
+                search = found_pos + 1;
+                continue;
+            }
+
+            if (next_key_pos == NULL || found_pos < next_key_pos) {
                 next_key_pos = found_pos;
                 *found_keyname = (char*)keys[i];
             }
+            break;
         }
     }
 
