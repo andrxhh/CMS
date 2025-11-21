@@ -8,6 +8,8 @@ typedef struct {
     Student *data;
     size_t size;
     size_t cap;
+    bool is_dirty;  // Used to check for save before exiting 
+    bool loaded;    // Ensure only once database is loaded at any given time unless prompted of the repercussions
 } Store;
 
 // Lifecycle

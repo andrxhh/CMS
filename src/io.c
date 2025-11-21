@@ -25,8 +25,21 @@ bool cms_load(const char *path, Store *s, int *skipped_lines) {
 
     char line[512];
     int skipped = 0;
+    int line_num = 0;
 
     while (fgets(line, sizeof line, fp)) {
+        line_num++;
+        // Check if line was truncated (no newline found)
+        size_t line_len = strlen(line);
+        if (line_len == sizeof(line) - 1 && line[line_len - 1] != '\n') {
+            fprintf(stderr, "Warning: Skipping overly long line in data file. <line %d>\n", line_num);
+            // Line too long, skip rest of line
+            int ch;
+            while ((ch = fgetc(fp)) != '\n' && ch != EOF);
+            skipped++;
+            continue; // Skip this malformed line
+        }
+
         strip_eol(line);
         if (line[0] == '\0' || line[0] == '#') {
             continue; // Skip empty lines and comments
@@ -68,7 +81,7 @@ bool cms_load(const char *path, Store *s, int *skipped_lines) {
     if (skipped_lines) {
         *skipped_lines = skipped;
     }
-
+    s->is_dirty = false;
     return true;
 }
 
@@ -82,7 +95,8 @@ bool cms_save(const char *path, const Store *s) {
         const Student *st = &s->data[i];
         fprintf(fp, "%d\t%s\t%s\t%.1f\n", st->id, st->name, st->programme, st->mark);
     }
-
     fclose(fp);
+
+    ((Store *)s)->is_dirty = false;
     return true;
 }

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 #include "store.h"
 #include "util.h"
 
@@ -12,7 +13,18 @@ static bool ensure_cap(Store *s, size_t need) {
     }
     size_t new_cap = s->cap ? s->cap : START_CAP;
     while (new_cap < need) {
+        // Check for overflow
+        if (new_cap > SIZE_MAX / 2) {   
+            fprintf(stderr, "Error: Store capacity limit reachewd.\n");
+            return false;
+        }
         new_cap *= 2;
+    }
+
+    // Check for overflow during byte size calculation
+    if (new_cap > SIZE_MAX / sizeof(Student)) {
+        fprintf(stderr, "Error: Store capacity limit reached.\n");
+        return false;
     }
 
     Student *new_alloc = realloc(s->data, new_cap * sizeof(Student));
@@ -28,6 +40,8 @@ void store_init(Store *s) {
     s->data = NULL;
     s->size = 0;
     s->cap = 0;
+    s->is_dirty = false;
+    s->loaded = false;
 }
 
 void store_free(Store *s) {
@@ -35,6 +49,8 @@ void store_free(Store *s) {
     s->data = NULL;
     s->size = 0;
     s->cap = 0;
+    s->is_dirty = false;
+    s->loaded = false;
 }
 
 int store_find_index_by_id(const Store *s, int id) {
@@ -47,9 +63,6 @@ int store_find_index_by_id(const Store *s, int id) {
 }
 
 bool store_insert(Store *s, Student st) {
-    // if (!valid_id(st.id) || !valid_mark(st.mark) || !valid_text(st.name) || !valid_text(st.programme)) {
-    //     return false;
-    // }
     if (!valid_id(st.id)) {
         fprintf(stderr, "Invalid ID: %d\n", st.id);
         return false;
@@ -76,6 +89,7 @@ bool store_insert(Store *s, Student st) {
     }
 
     s->data[s->size++] = st;
+    s->is_dirty = true;
     return true;
 }
 
@@ -105,7 +119,7 @@ bool store_update(Store *s, int id, const Student *patch) {
         if (!valid_mark(patch->mark)) return false;
         cur->mark = patch->mark;
     }
-
+    s->is_dirty = true;
     return true;
 }
 
@@ -114,5 +128,6 @@ bool store_delete(Store *s, int id) {
     if (idx < 0) return false;
     s->data[idx] = s->data[s->size - 1]; // Swap with last student record
     s->size--;
+    s->is_dirty = true;
     return true;
 }

@@ -9,7 +9,8 @@ Stats compute_stats(const Student *arr, size_t size) {
     float sum = 0.0f;
     stats.min_mark = arr[0].mark;
     stats.max_mark = arr[0].mark;
-    stats.min_idx, stats.max_idx = 0;
+    stats.min_idx = 0;
+    stats.max_idx = 0;
 
     for (size_t i = 0; i < size; i++) {
         float m = arr[i].mark;

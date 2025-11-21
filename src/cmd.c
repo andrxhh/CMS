@@ -26,30 +26,120 @@ static bool has_no_args(char *args, const char *cmd_name) {
     return true;
 }
 
+// Helper function to parse "Key=Value" pairs from args into a Student patch struct
+static bool parse_args_to_patch(char *args, Student *patch) {
+    char *p = args;
+    bool any_parsed = false;
+
+    while (p && *p) {
+        const char *key_name = NULL;
+        char *key_start = find_next_key(p, &key_name); // Find start of next key
+        if (!key_start) break;
+
+        char *eq = strchr(key_start + strlen(key_name), '=');
+
+        // validate spacing between KEY and EQUALS
+        char *check_ptr = key_start + strlen(key_name);
+        while (check_ptr < eq && isspace((unsigned char)*check_ptr)) {
+            check_ptr++;
+        }
+
+        if (!eq || check_ptr != eq) {
+            fprintf(stderr, "Malformed key-value pair: Missing or invalid '=' after key %s.\n", key_name);
+            return false;
+        }
+
+        char *value_start = eq + 1;
+        while (*value_start && isspace((unsigned char)*value_start)) value_start++;
+
+        const char *next_key = NULL;
+        char *value_end = find_next_key(value_start, &next_key); 
+
+        char value_buf[256];
+        size_t len;
+        if (value_end == NULL) {
+            len = strlen(value_start);
+            p = NULL; // End of string
+        } else {
+            len = value_end - value_start;
+            p = value_end;
+        }
+
+        if (len > sizeof(value_buf) - 1) len = sizeof(value_buf) - 1;
+        strncpy(value_buf, value_start, len);
+        value_buf[len] = '\0';
+        str_trim(value_buf);
+
+        // Strip quotes
+        size_t value_len = strlen(value_buf);
+        if (value_len >= 2 && value_buf[0] == '"' && value_buf[value_len - 1] == '"') {
+            value_buf[value_len - 1] = '\0';
+            memmove(value_buf, value_buf + 1, value_len - 1);
+        }
+
+        // Assign to patch
+        if (str_ieq(key_name, "ID")) {
+            if (!parse_int(value_buf, &patch->id)) {
+                fprintf(stderr, "Invalid ID value: %s\n", value_buf);
+                return false;
+            }
+        } else if (str_ieq(key_name, "Name")) {
+            strncpy(patch->name, value_buf, sizeof(patch->name));
+            patch->name[sizeof(patch->name) - 1] = '\0';
+        } else if (str_ieq(key_name, "Programme")) {
+            strncpy(patch->programme, value_buf, sizeof(patch->programme));
+            patch->programme[sizeof(patch->programme) - 1] = '\0';
+        } else if (str_ieq(key_name, "Mark")) {
+            if (!parse_float(value_buf, &patch->mark)) {
+                fprintf(stderr, "Invalid Mark value: %s\n", value_buf);
+                return false;
+            }
+        }
+        any_parsed = true;
+    }
+    return any_parsed;
+}
+
 static bool parse_single_id_command(char *args, const char *cmd_name, int *out_id) {
     if (!args) {
         fprintf(stderr, "%s command requires ID argument.\n", cmd_name);
         return false;
     }
+
+    char *p = args;
+    while (isspace((unsigned char)*p)) p++;
+
+    // Check for "ID"
     
-    if (strncasecmp(args, "ID=", 3) != 0) {
+    if (strncasecmp(args, "ID", 2) != 0) {
         fprintf(stderr, "%s command requires ID argument in format ID=<value>.\n", cmd_name);
         return false;
     }
 
-    char *value_str = args + 3;
-    str_trim(value_str);
+    p += 2;
+    while (isspace((unsigned char)*p)) p++;
+    if (*p != '=') {
+        fprintf(stderr, "Expected '=' after ID in %s command.\n", cmd_name);
+        return false;
+    }
 
-    char *endptr;
-    long value = strtol(value_str, &endptr, 10);
-
-    if (endptr == value_str) {
+    p++; // Skip '='
+    while (isspace((unsigned char)*p)) p++;
+    if (*p == '\0') {
         fprintf(stderr, "No ID value provided for %s command.\n", cmd_name);
         return false;
     }
 
-    while (*endptr && isspace((unsigned char)*endptr)) endptr++; // Skip trailing whitespace
+    char *endptr;
+    long value = strtol(p, &endptr, 10);
 
+    if (p == endptr) {
+        fprintf(stderr, "Invalid numeric ID format for %s command.\n", cmd_name);
+        return false;
+    }
+
+    // This prevent "DELETE ID=123456 and some other text"
+    while (*endptr && isspace((unsigned char)*endptr)) endptr++; // Skip trailing whitespace
     if (*endptr != '\0') {
         fprintf(stderr, "Unexpected characters after ID value in %s command.\n", cmd_name);
         return false;
@@ -66,7 +156,7 @@ static bool parse_single_id_command(char *args, const char *cmd_name, int *out_i
 
 static void show_all(const Store *s){
     if (s->size == 0) {
-        puts("No records.");
+        puts("No records in memory. (Type 'OPEN')");
         return;
     }
     // Dynamically compute column widths based on data + header
@@ -112,9 +202,43 @@ static void show_all(const Store *s){
 }
 
 static bool handle_find(char *args, Store *s) {
-    char *column = strtok(args, " ");
-    char *op = strtok(NULL, " ");
-    char *value = strtok(NULL, "");
+    char *p = args;
+    while (p && isspace((unsigned char)*p)) p++;
+
+    if (!p || *p == '\0') {
+        fprintf(stderr, "FIND command requires arguments. Syntax: FIND <Column> <Operator> <Value>\n");
+        return false;
+    }
+
+    // Extract column (1st word)
+    char *col_start = p;
+    // Scan forward till space or operator character
+    while (*p && !isspace((unsigned char)*p) && *p != '=' && *p != '>' && *p != '<') p++;
+    size_t col_len = p - col_start;
+    char column[32];
+    if (col_len >= sizeof(column)) col_len = sizeof(column) - 1;
+    strncpy(column, col_start, col_len);
+    column[col_len] = '\0';
+
+    // Extrat operator (2nd word)
+    while (isspace((unsigned char)*p)) p++;
+    char *op_start = p;
+    // Scan for operator characters or text operators like "CONTAINS"
+    if (isalnum((unsigned char)*p)) {
+        while (*p && !isspace((unsigned char)*p)) p++;
+    } else {
+        while (*p && (*p == '=' || *p == '>' || *p == '<')) p++;
+    }
+    size_t op_len = p - op_start;
+    char op[16];
+    if (op_len >= sizeof(op)) op_len = sizeof(op) - 1;
+    strncpy(op, op_start, op_len);
+    op[op_len] = '\0';
+
+    // Extract value (rest of line)
+    while (p && isspace((unsigned char)*p)) p++;
+    char *value = p;
+
 
     if (!column || !op || !value) { // Missing arguments
         fprintf(stderr, "Error: FIND requires 3 arguments. Syntax: FIND <Column> <Operator> <Value>\n");
@@ -123,8 +247,8 @@ static bool handle_find(char *args, Store *s) {
         return false;
     }
 
-    str_trim(column); str_tolower(column);
-    str_trim(op); str_tolower(op);
+    str_tolower(column);
+    str_tolower(op);
     str_trim(value);
 
     size_t len = strlen(value);
@@ -184,6 +308,7 @@ static bool handle_find(char *args, Store *s) {
             }
         } else {
             fprintf(stderr, "Error: Unsupported column for FIND command: %s\nUse Name, Programme, Mark.\n", column);
+            return false;
         }
 
         if (match) {
@@ -206,79 +331,13 @@ static bool handle_find(char *args, Store *s) {
 }
 
 static bool handle_insert(char *args, Store *s) {
-    printf("Insert args: %s\n", args);
     Student patch;
     init_patch(&patch);
 
-    char *p = args;
-    while (p && *p) {
-        const char *key_name= NULL;
-        char *key_start = find_next_key(p, &key_name); // Find start of next key
-        if (!key_start) {
-            break;
-        }
-
-        char *eq = strchr(key_start + strlen(key_name), '=');
-
-        char *check_ptr = key_start + strlen(key_name);
-        while(check_ptr < eq && isspace((unsigned char)*check_ptr)) {
-            check_ptr++;
-        }
-
-        if (!eq || check_ptr != eq) {
-            fprintf(stderr, "Malformed key-value pair: Missing or invalid '=' after key %s.\n", key_start);
-            return false;
-        }
-
-        char *value_start = eq + 1;
-        while (*value_start && isspace((unsigned char)*value_start)) value_start++;
-
-        const char *next_key = NULL;
-        char *value_end = find_next_key(value_start, &next_key); // Find start of next key or the end of string
-
-        char value_buf[256];
-        size_t len;
-        if (value_end == NULL) {
-            len = strlen(value_start);
-            p = NULL; // End of string
-        } else {
-            len = value_end - value_start;
-            p = value_end;
-        }
-
-        if (len > sizeof(value_buf)-1) len = sizeof(value_buf)-1;
-        strncpy(value_buf, value_start, len);
-        value_buf[len] = '\0';
-        str_trim(value_buf);
-
-        size_t value_len = strlen(value_buf);
-        if (value_len > 2 && value_buf[0] == '"' && value_buf[value_len - 1] == '"') {
-            // Remove surrounding quotes
-            value_buf[value_len - 1] = '\0';
-            memmove(value_buf, value_buf + 1, value_len - 1);
-        }
-
-        if (str_ieq(key_name, "ID")) {
-            if(!parse_int(value_buf, &patch.id)) {
-                fprintf(stderr, "Invalid ID value: %s\n", value_buf);
-                return false;
-            }
-        } else if (str_ieq(key_name, "Name")) {
-            strncpy(patch.name, value_buf, sizeof(patch.name));
-            patch.name[sizeof(patch.name) - 1] = '\0';
-        } else if (str_ieq(key_name, "Programme")) {
-            strncpy(patch.programme, value_buf, sizeof(patch.programme));
-            patch.programme[sizeof(patch.programme) - 1] = '\0';
-        } else if (str_ieq(key_name, "Mark")) {
-            if (!parse_float(value_buf, &patch.mark)) {
-                fprintf(stderr, "Invalid Mark value: %s\n", value_buf);
-                return false;
-            }
-        }
+    if (!parse_args_to_patch(args, &patch)) {
+        fprintf(stderr, "Error: No valid parameters found to insert.\n");
+        return false;
     }
-
-    printf("Parsed Insert - ID: %d, Name: %s, Programme: %s, Mark: %.2f\n",
-           patch.id, patch.name, patch.programme, patch.mark);
 
     // Validate all fields are provided
     if (patch.id < 0 || patch.name[0] == '\0' || patch.programme[0] == '\0' || patch.mark < 0.0f) {
@@ -299,75 +358,10 @@ static bool handle_update(char *args, Store *s) {
     Student patch;
     init_patch(&patch);
 
-    char *p = args;
-    while (p && *p) {
-        const char *key_name= NULL;
-        char *key_start = find_next_key(p, &key_name); // Find start of next key
-        if (!key_start) {
-            break;
-        }
-
-        char *eq = strchr(key_start + strlen(key_name), '=');
-
-        char *check_ptr = key_start + strlen(key_name);
-        while(check_ptr < eq && isspace((unsigned char)*check_ptr)) {
-            check_ptr++;
-        }
-
-        if (!eq || check_ptr != eq) {
-            fprintf(stderr, "Malformed key-value pair: Missing or invalid '=' after key %s.\n", key_start);
-            return false;
-        }
-
-        char *value_start = eq + 1;
-        while (*value_start && isspace((unsigned char)*value_start)) value_start++;
-
-        const char *next_key = NULL;
-        char *value_end = find_next_key(value_start, &next_key); // Find start of next key or the end of string
-
-        char value_buf[256];
-        size_t len;
-        if (value_end == NULL) {
-            len = strlen(value_start);
-            p = NULL; // End of string
-        } else {
-            len = value_end - value_start;
-            p = value_end;
-        }
-
-        if (len > sizeof(value_buf)-1) len = sizeof(value_buf)-1;
-        strncpy(value_buf, value_start, len);
-        value_buf[len] = '\0';
-        str_trim(value_buf);
-
-        size_t value_len = strlen(value_buf);
-        if (value_len > 2 && value_buf[0] == '"' && value_buf[value_len - 1] == '"') {
-            // Remove surrounding quotes
-            value_buf[value_len - 1] = '\0';
-            memmove(value_buf, value_buf + 1, value_len - 1);
-        }
-
-        if (str_ieq(key_name, "ID")) {
-            if(!parse_int(value_buf, &patch.id)) {
-                fprintf(stderr, "Invalid ID value: %s\n", value_buf);
-                return false;
-            }
-        } else if (str_ieq(key_name, "Name")) {
-            strncpy(patch.name, value_buf, sizeof(patch.name));
-            patch.name[sizeof(patch.name) - 1] = '\0';
-        } else if (str_ieq(key_name, "Programme")) {
-            strncpy(patch.programme, value_buf, sizeof(patch.programme));
-            patch.programme[sizeof(patch.programme) - 1] = '\0';
-        } else if (str_ieq(key_name, "Mark")) {
-            if (!parse_float(value_buf, &patch.mark)) {
-                fprintf(stderr, "Invalid Mark value: %s\n", value_buf);
-                return false;
-            }
-        }
+    if (!parse_args_to_patch(args, &patch)) {
+        fprintf(stderr, "Error: No valid parameters found to insert.\n");
+        return false;
     }
-
-    printf("Parsed Update - ID: %d, Name: %s, Programme: %s, Mark: %.2f\n",
-           patch.id, patch.name, patch.programme, patch.mark);
 
     if (patch.id < 0) {
         fprintf(stderr, "UPDATE requires existing ID to identify record.\n");
@@ -488,11 +482,26 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
             return true;
         }
 
+        if (s->loaded) {
+            printf("You have previously loaded the database from %s. Do you want to load again? (Y/N): ", db_path);
+            char buf[16];
+            fgets(buf, sizeof(buf), stdin);
+            if (buf[0] != 'Y' && buf[0] != 'y') {
+                printf("Load cancelled...\n");
+                return true;
+            }
+        }
+
         int skipped = 0;
         store_free(s);
         store_init(s);
         if (cms_load(db_path, s, &skipped)) {
-            printf("Database loaded. Total %zu records, skipped %d line(s).\n", s->size, skipped);
+            if(s->size == 0) {
+                printf("File loaded successfully, no valid records found!\n");
+            } else {
+                printf("Database loaded. Total %zu records, skipped %d line(s).\n", s->size, skipped);
+                s->loaded = true;
+            }
         } else {
             fprintf(stderr, "Failed to load database from %s\n", db_path);
         }
@@ -582,37 +591,38 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
         }
 
         puts("Available commands:");
-        puts("  OPEN                 - Load database from the configured file (unsaved changes will be lost).");
-        puts("  SAVE                 - Save current database to the configured file.");
-        puts("  SHOW [ALL] [SORT BY ID|MARK [ASC|DESC]]");
-        puts("                       - Display records. Optional sort clause (default: ID ASC).");
-        puts("  SHOW SUMMARY         - Display statistics: count, average, min/max (with names), grade bands.");
-        puts("  INSERT k=v ...       - Add a new student. Required keys: ID, Name, Programme, Mark.");
-        puts("                         Example: INSERT ID=1 Name=\"Jane Doe\" Programme=CS Mark=85.5");
-        puts("  UPDATE k=v ...       - Update an existing student. ID is required to identify the record.");
-        puts("                         Only provide keys you want to change (ID, Name, Programme, Mark).");
-        puts("  DELETE ID=...        - Delete a student by ID (prompts for confirmation).");
-        puts("                         Example: DELETE ID=1");
-        puts("  QUERY ID=...         - Show a single record by ID.");
-        puts("                         Example: QUERY ID=1");
-        puts("  FIND <Column> <Op> <Value>");
-        puts("                       - Search records. Columns: Name, Programme, Mark.");
-        puts("                         Operators for Name/Programme: =, CONTAINS (case-insensitive).");
-        puts("                         Operators for Mark: =, >, <, >=, <=.");
-        puts("                         Value for strings may be quoted, e.g. FIND Name CONTAINS \"Wang\".");
-        puts("                         Example: FIND Mark > 75");
-        puts("  HELP                 - Show this help text.");
-        puts("  EXIT | QUIT          - Exit the program (use SAVE to persist changes).");
-        puts("");
-        puts("Notes:");
+        printf("\n--- FILE OPERATIONS ---\n");
+        printf("  OPEN                 : Load database from file (discards unsaved changes).\n");
+        printf("  SAVE                 : Save current memory to file.\n");
+        printf("  EXIT / QUIT          : Exit the program.\n");
+
+        printf("\n--- VIEWING DATA ---\n");
+        printf("  SHOW ALL [SORT BY..] : Display all records.\n");
+        printf("                         Flags: SORT BY ID | SORT BY MARK [ASC|DESC]\n");
+        printf("  SHOW SUMMARY         : Display statistics (Count, Avg, Min, Max, Grade Bands).\n");
+        printf("  QUERY ID=<id>        : View a single student by ID.\n");
+        printf("  FIND <Col> <Op> <Val>: Search filter.\n");
+        printf("                         Cols: Name, Programme, Mark.\n");
+        printf("                         Ops : =, CONTAINS, <, >, <=, >=.\n");
+
+        printf("\n--- EDITING DATA ---\n");
+        printf("  INSERT <k>=<v> ...   : Add a new student.\n");
+        printf("                         Req: ID, Name, Programme, Mark.\n");
+        printf("  UPDATE <k>=<v> ...   : Update a student. ID is required to match record.\n");
+        printf("  DELETE ID=<id>       : Delete a student (prompts for confirmation).\n");
+
+        printf("\n--- HELP ---\n");
+        printf("  HELP                 : Show this help text.\n");
+
+        printf("\n--- NOTES ---\n");
         puts("  - Keys are case-insensitive (ID, Name, Programme, Mark).");
         puts("  - ID must be an integer; Mark is a floating point number.");
         puts("  - For multi-word values enclose them in double quotes: Name=\"John Smith\".");
         puts("  - When parsing key=value pairs, spaces separate tokens; quoted values may contain spaces.");
         puts("  - Use OPEN to reload the DB file; this will discard unsaved in-memory changes.");
         puts("  - Use SAVE to write current in-memory data to the DB file.");
-        puts("");
-        puts("Examples:");
+
+        printf("\n--- EXAMPLES ---\n");
         puts("  INSERT ID=2 Name=\"Alice Lee\" Programme=IT Mark=72.0");
         puts("  UPDATE ID=2 Mark=75.5");
         puts("  SHOW ALL SORT BY MARK DESC");
@@ -622,7 +632,24 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
         
     return true;
     }
-    if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) { return false; }
+    if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) {
+        if (s->is_dirty) {
+            printf("You have unsaved changes. Do you want to save before exiting? (Y/N): ");
+            char buf[16];
+            fgets(buf, sizeof(buf), stdin);
+            if (buf[0] == 'Y' || buf[0]=='y') {
+                if (cms_save(db_path, s)) {
+                    printf("Database saved to %s\n", db_path);
+                } else {
+                    fprintf(stderr, "Failed to save database to %s\n", db_path);
+                    return true;
+                }
+            } else {
+                printf("Exiting without saving...\n");
+            }
+        }
+        return false; 
+    }
 
 
     printf("Unknown command: %s (type HELP)\n", cmd);
