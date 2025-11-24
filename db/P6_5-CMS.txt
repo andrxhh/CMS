@@ -1,3 +1,4 @@
 100101	Alice	IT	72.0
 100200	Temp User	ENG	60.0
 2300001	Alice Tan	Software Engineering	99.0
+777777	Temporary	Test	50.0

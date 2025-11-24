@@ -26,9 +26,6 @@ bool parse_args_to_patch(char *args, Student *patch) {
     /* Loop until we run out of input */
     while (p && *p) {
         const char *key_name = NULL;
-        /* find_next_key locates the next occurrence of a known key
-           (ID, Name, Programme, Mark) and returns its start. It
-           ignores matches that appear inside quoted strings. */
         char *key_start = find_next_key(p, &key_name);
         if (!key_start) break; /* no more keys found */
 
@@ -48,13 +45,11 @@ bool parse_args_to_patch(char *args, Student *patch) {
         char *value_start = eq + 1;
         while (*value_start && isspace((unsigned char)*value_start)) value_start++;
 
-        /* value_end is the start of the next key (if any), so the value
-           spans [value_start, value_end) or until the end of the string. */
+        /* value_end is the start of the next key (if any) */
         const char *next_key = NULL;
         char *value_end = find_next_key(value_start, &next_key);
 
-        /* Copy value into a temporary buffer and trim it. Use a fixed
-           upper bound to avoid unbounded memory use. */
+        /* Copy value into a temporary buffer and trim it. */
         char value_buf[256];
         size_t len;
         if (value_end == NULL) {
@@ -67,7 +62,9 @@ bool parse_args_to_patch(char *args, Student *patch) {
 
         if (len > sizeof(value_buf) - 1) len = sizeof(value_buf) - 1;
         strncpy(value_buf, value_start, len);
-        value_buf[len] = '\0';
+        value_buf[len] = '\0'; // Null-terminate copy
+        
+        // Trim external whitespace (before quotes are removed)
         str_trim(value_buf);
 
         /* If value is quoted, require a matching closing quote and strip it. */
@@ -77,24 +74,24 @@ bool parse_args_to_patch(char *args, Student *patch) {
                 fprintf(stderr, "Malformed quoted value for key %s: unmatched '\"'\n", key_name);
                 return false;
             }
-            /* Remove trailing quote and shift to remove leading quote */
-            value_buf[value_len - 1] = '\0';
-            memmove(value_buf, value_buf + 1, value_len - 1);
-            /* Adjust length and ensure null termination */
-            value_len -= 2;
-            if ((int)value_len < 0) value_len = 0;
-            value_buf[value_len] = '\0';
+            
+            // Remove quotes: remove trailing quote and shift to remove leading quote
+            value_buf[value_len - 1] = '\0'; // Remove trailing "
+            memmove(value_buf, value_buf + 1, value_len - 1); // Shift left
+            
+            // Trim the internal spaces (e.g., from "   Chaos   ")
+            str_trim(value_buf);
+            
+            value_len = strlen(value_buf); // Recalculate length after inner trim
         }
 
         /* Dispatch and validate based on the key token */
         if (str_ieq(key_name, "ID")) {
-            /* Parse integer ID */
             if (!parse_int(value_buf, &patch->id)) {
                 fprintf(stderr, "Invalid ID value: %s\n", value_buf);
                 return false;
             }
         } else if (str_ieq(key_name, "Name")) {
-            /* Validate length and allowed characters */
             if (strlen(value_buf) >= sizeof(patch->name)) {
                 fprintf(stderr, "Name too long (max %zu chars): %s\n", sizeof(patch->name)-1, value_buf);
                 return false;
