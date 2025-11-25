@@ -93,35 +93,6 @@ bool store_insert(Store *s, Student st) {
     return true;
 }
 
-
-
-/*
-   This function locates a student record by ID and updates specified fields with new values.
-    
-    Parameters:
-    1. 's' -> pointer to the Store structure containing all student records
-    2. 'id' -> the ID of the student record to update (used to locate the record)
-    3. 'patch' -> pointer to a Student structure containing the new values to update
-    
-    Functionality:
-    - Searches for the student record with the specified ID in the store
-    - If ID field in patch is provided and different from current ID:
-        * Validates the new ID format
-        * Checks that the new ID doesn't already exist in the database
-        * Updates the ID if valid
-    - If Name/Programme field in patch is non-empty and Mark field in patch is non-negative:
-        * Validates the name & programme text, & mark value
-        * Updates the name/programme/mark field if valid
-    - Only updates fields that are provided in the patch (partial updates supported)
-    
-    Returns:
-    - true if the record was found and all provided fields were successfully updated
-    - false if:
-        * The ID is not found in the store
-        * Any validation fails (invalid ID, duplicate ID, invalid text, invalid mark)
-    
-    Note: Empty strings in Name/Programme and negative Mark values are treated as "no update"
-*/
 bool store_update(Store *s, int id, const Student *patch) {
     int idx = store_find_index_by_id(s, id);
     if (idx < 0) return false;

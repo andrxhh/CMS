@@ -38,7 +38,7 @@ int main(void) {
        }
 
 
-       // On exit, you may prompt to save unsaved changes (TODO: track dirty flag)
+       // Exit
        store_free(&store);
        puts("Thank you for using CMS.\nGoodbye.");
        return 0;

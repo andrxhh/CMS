@@ -1,44 +1,45 @@
-/*
- * cmd_display.c
- *
- * Small display helpers: table printer and the required declaration
- * text. Kept separate so formatting logic doesn't clutter command
- * handler implementations.
- */
-
 #include <stdio.h>
 #include <string.h>
 #include "cmd_internal.h"
 #include "stats.h"
 
-/* Print all records in a simple table. Column widths are computed dynamically */
+/*
+This file contains display-related commands, such as showing all records and
+printing the team declaration.
+*/
+
+// Print all records in a simple table. Column widths are computed dynamically
 void show_all(const Store *s) {
     if (s->size == 0) {
         puts("No records in memory. (Type 'OPEN')");
         return;
     }
-    size_t id_w = strlen("ID");
-    size_t name_w = strlen("Name");
-    size_t prog_w = strlen("Programme");
-    size_t mark_w = strlen("Mark");
+
+    // Computer length of headers
+    size_t id_width = strlen("ID");
+    size_t name_width = strlen("Name");
+    size_t prog_width = strlen("Programme");
+    size_t mark_width = strlen("Mark");
     char tmp[64];
 
+    // Compute maximum width for each column by scanning all records and comparing lengths
     for (size_t i = 0; i < s->size; ++i) {
         const Student *st = &s->data[i];
         int n = snprintf(tmp, sizeof tmp, "%d", st->id);
-        if (n > 0 && (size_t)n > id_w) id_w = (size_t)n;
+        if (n > 0 && (size_t)n > id_width) id_width = (size_t)n;
         size_t ln = strlen(st->name);
-        if (ln > name_w) name_w = ln;
+        if (ln > name_width) name_width = ln;
         size_t lp = strlen(st->programme);
-        if (lp > prog_w) prog_w = lp;
+        if (lp > prog_width) prog_width = lp;
         n = snprintf(tmp, sizeof tmp, "%.1f", st->mark);
-        if (n > 0 && (size_t)n > mark_w) mark_w = (size_t)n;
+        if (n > 0 && (size_t)n > mark_width) mark_width = (size_t)n;
     }
 
-    int iw = (int)id_w;
-    int nw = (int)name_w;
-    int pw = (int)prog_w;
-    int mw = (int)mark_w;
+    // Cast to int for printf
+    int iw = (int)id_width;
+    int nw = (int)name_width;
+    int pw = (int)prog_width;
+    int mw = (int)mark_width;
 
     printf("size=%zu cap=%zu\n", s->size, s->cap);
     printf("%-*s  %-*s  %-*s  %*s\n", iw, "ID", nw, "Name", pw, "Programme", mw, "Mark");
@@ -53,7 +54,7 @@ void show_all(const Store *s) {
     puts("");
 }
 
-/* Print the standard team declaration required by the assignment. */
+// Print the declaration required for the team project
 void print_declaration(const char *team_name, const char *members_csv, const char *date_str) {
     puts("============================================");
     puts("We declare that this is our own work and ...");

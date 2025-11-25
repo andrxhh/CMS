@@ -10,8 +10,10 @@
 #include "util.h"
 #include "cmd_internal.h"
 
-/* Check that a command that expects no arguments was not given any.
-   Trim whitespace and print an error message if unexpected args exist. */
+/* 
+Check that a command that expects no arguments was not given any.
+Trim whitespace and print an error message if unexpected args exist.
+*/
 static bool has_no_args(char *args, const char *cmd_name) {
      if (args) {
           str_trim(args);
@@ -23,23 +25,25 @@ static bool has_no_args(char *args, const char *cmd_name) {
      return true;
 }
 
-/* Process a single input command line.
-    Returns true to continue the main loop, false to exit program.
-    Handles file ops, show, insert/update/delete/query/find/help/exit. */
+/*
+Process a single input command line.
+Returns true to continue the main loop, false to exit program.
+Handles file ops, show, insert/update/delete/query/find/help/exit.
+*/
 bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
-     /* Make a modifiable copy of the input line */
+     // Make a modifiable copy of the input line
      char line[512];
      strncpy(line, line_in, sizeof(line));
      line[sizeof(line) - 1] = '\0';
 
-     /* Ignore blank lines and comment lines starting with '#' or '--' */
+     // Ignore blank lines and comment lines starting with '#' or '--'
      char *tmp = line;
      while (*tmp && isspace((unsigned char)*tmp)) tmp++;
      if (*tmp == '\0') return true; // blank
      if (*tmp == '#') return true; // comment
      if (*tmp == '-' && *(tmp+1) == '-') return true; // comment start with --
 
-     /* Split command and arguments */
+     // Split command and arguments, command is first token and must be separated by space
      char *p = line;
      while (*p && !isspace((unsigned char)*p)) p++;
      char *cmd = line;
@@ -50,11 +54,14 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
      }
      str_tolower(cmd);
 
+     // command dispatch
      if (strcmp(cmd, "open") == 0 || strcmp(cmd, "load") == 0) {
+          // Open does not take arguments
           if (!has_no_args(args, "OPEN")) {
                 return true;
           }
 
+          // Warn if already loaded
           if (s->loaded) {
                 printf("You have previously loaded the database from %s. Do you want to load again? (Y/N): ", db_path);
                 char buf[16];
@@ -66,9 +73,14 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
           }
 
           int skipped = 0;
+          // Clear existing store before loading
           store_free(s);
+          // Initialize store
           store_init(s);
+
+          // Load from file and insert into store
           if (cms_load(db_path, s, &skipped)) {
+               // No records loaded if size remains as 0
                 if(s->size == 0) {
                      printf("File loaded successfully, no valid records found!\n");
                 } else {
@@ -83,7 +95,7 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
      }
 
      if (strcmp(cmd, "save") == 0) {
-          /* SAVE [path] -> optional filename argument */
+          // SAVE [path] -> optional filename argument
           if (args) {
                 str_trim(args);
           }
@@ -101,9 +113,9 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
      }
 
      if (strcmp(cmd, "show") == 0) {
-          /* SHOW ALL [SORT BY ...] or SHOW SUMMARY */
+          // SHOW [SORT BY ...] or SHOW SUMMARY
           if (!args || strncasecmp(args, "summary", 7) != 0) {
-                /* maybe has sorting clause */
+                // Assume sort by ascending ID by default
                 bool sorted = false, asc = true; SortKey key = SORT_BY_ID;
                 if (args && str_icontains(args, "sort by")) {
                      sorted = true;
@@ -113,7 +125,8 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
                 if (sorted) store_sort(s, key, asc);
                      show_all(s);
           } else {
-                     /* SHOW SUMMARY prints aggregated statistics */
+                     // SHOW SUMMARY prints aggregated statistics
+                     // If no records, all stats are zero/none
                      Stats st = compute_stats(s->data, s->size);
                      printf("Total: %zu\nAverage: %.2f\nHighest: %.2f", st.count, st.average, st.max_mark);
                      if (st.max_idx >= 0) printf(" (%s)\n", s->data[st.max_idx].name); else puts("");
@@ -127,14 +140,14 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
 
      if (strcmp(cmd, "insert") == 0) {
              if (!handle_insert(args ? args : "", s)) {
-                   /* Error messages already printed by handler */
+                   // Error messages already printed by handler
               }
 
           return true;
      }
      if (strcmp(cmd, "update") == 0) {
              if (!handle_update(args ? args : "", s)) {
-                   /* Error messages already printed by handler */
+                   // Error messages already printed by handler
               }
 
           return true;
@@ -142,7 +155,7 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
 
      if (strcmp(cmd, "delete") == 0) {
              if (!handle_delete(args ? args : "", s)) {
-                   /* Error messages already printed by handler */
+                   // Error messages already printed by handler
               }
 
           return true;
@@ -150,18 +163,19 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
 
      if (strcmp(cmd, "query") == 0) {
              if (!handle_query(args ? args : "", s)) {
-                   /* Error messages already printed by handler */
+                   // Error messages already printed by handler
               }
           return true;
      }
 
      if (strcmp(cmd, "find") == 0) {
              if (!handle_find(args ? args : "", s)) {
-                   /* Error messages already printed by handler */
+                   // Error messages already printed by handler
               }
           return true;
      }
 
+     // Help command
      if (strcmp(cmd, "help") == 0) {
           if (!has_no_args(args, "HELP")) return true;
 
@@ -205,7 +219,10 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
           puts("  FIND Mark >= 85");
           return true;
      }
+
+     // Exit command
      if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) {
+          // Prompt to save if changes have been made (insert/update/delete)
           if (s->is_dirty) {
                 printf("You have unsaved changes. Do you want to save before exiting? (Y/N): ");
                 char buf[16];
@@ -224,9 +241,7 @@ bool cmd_process_line(const char *line_in, Store *s, const char *db_path) {
           return false; 
      }
 
-
+     // All conditions exhausted, unknown command
      printf("Unknown command: %s (type HELP)\n", cmd);
      return true;
 }
-
-/* `print_declaration` moved to `cmd_display.c` to keep display logic separate. */
