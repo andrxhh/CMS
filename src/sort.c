@@ -3,15 +3,13 @@
 
 
 //cmp_id_asc() -> tells qsort how to compare students by ID in ascending order.
-//cmp_mark_asc() -> tells qsort how to compare students by mark in ascending order.
-
-
 static int cmp_id_asc(const void *a, const void *b) { // comparator for ID ascending
      const Student *x = (const Student*)a;
      const Student *y = (const Student*)b;
      return (x->id > y->id) - (x->id < y->id); // return -1/0/1 without overflow
 }
 
+//cmp_mark_asc() -> tells qsort how to compare students by mark in ascending order.
 static int cmp_mark_asc(const void *a, const void *b) { // comparator for mark ascending
      const Student *x = (const Student*)a;
      const Student *y = (const Student*)b;

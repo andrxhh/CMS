@@ -6,6 +6,13 @@
 #include <limits.h>
 #include "util.h"
 
+/*
+This file provides utility functions for string manipulation, parsing,
+and validation of Student fields such as ID, marks, and text fields. It includes
+functions for trimming whitespace, case-insensitive comparisons, parsing integers
+and floats from strings, and validating the integrity of student data.
+*/
+
 // Helper function to convert ASCII character to lowercase without locale dependence
 static inline int ascii_tolower_int(int c) {
     return (c >= 'A' && c <= 'Z') ? (c - 'A' + 'a') : c;
@@ -31,6 +38,7 @@ void str_trim(char *s) {
     s[end - start] = '\0';
 }
 
+// Convert string to lowercase in-place
 void str_tolower(char *str) {
     if (!str) return;
     for (; *str; str++) {
