@@ -5,11 +5,11 @@
 #include "student.h"
 #include "store.h"
 
-/* Parsing helpers (moved out of cmd.c) */
+/* Parsing helpers */
 bool parse_args_to_patch(char *args, Student *patch);
 bool parse_single_id_command(char *args, const char *cmd_name, int *out_id);
 
-/* Handlers (moved from cmd.c) */
+/* Handlers */
 bool handle_insert(char *args, Store *s);
 bool handle_update(char *args, Store *s);
 bool handle_delete(char *args, Store *s);

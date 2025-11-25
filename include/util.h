@@ -12,9 +12,6 @@ bool str_ieq(const char *a, const char *b);   // Case-insensitive string equalit
 const char *str_icase_find(const char *haystack, const char *needle);
 bool str_icontains(const char *haystack, const char *needle);
 
-// Quote aware string tokenization
-char* smart_strtok(char **str, const char *delim, bool *in_quote_error);
-
 // Find the next key position in a string
 char* find_next_key(char *p, const char **found_keyname);
 
