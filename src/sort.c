@@ -1,10 +1,10 @@
 #include <stdlib.h>
 #include "sort.h"
 
-/*
-cmp_id_asc() -> tells qsort how to compare students by ID in ascending order.
-cmp_mark_asc() -> tells qsort how to compare students by mark in ascending order.
-*/
+
+//cmp_id_asc() -> tells qsort how to compare students by ID in ascending order.
+//cmp_mark_asc() -> tells qsort how to compare students by mark in ascending order.
+
 
 static int cmp_id_asc(const void *a, const void *b) { // comparator for ID ascending
      const Student *x = (const Student*)a;
@@ -19,13 +19,11 @@ static int cmp_mark_asc(const void *a, const void *b) { // comparator for mark a
 }
 
 
-/*
-This function sorts the students in the Store based on the specified key (ID or mark) and order (ascending or descending).
-Store *s → the list of students
-SortKey key → sort by ID or MARK
-bool asc → TRUE for ascending, FALSE for descending
-*/
 
+//This function sorts the students in the Store based on the specified key (ID or mark) and order (ascending or descending).
+//Store *s → the list of students
+//SortKey key → sort by ID or MARK
+//bool asc → TRUE for ascending, FALSE for descending
 void store_sort(Store *s, SortKey key, bool asc) {
      if (!s || s->size <= 1) return; // nothing to sort if null or size 0/1
      
